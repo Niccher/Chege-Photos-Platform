@@ -66,6 +66,7 @@ def _face_to_dict(face, idx: int) -> dict:
     attrs = extract_attributes(face)
     d["age"] = attrs["age"]
     d["gender"] = attrs["gender"]
+    d["emotion"] = attrs.get("emotion")
     return d
 
 
@@ -279,6 +280,8 @@ def process_photo_pipeline_sync(
                 fe.gender = attrs["gender"]
             if not fe.id or not fe.age:
                 fe.age = attrs["age"]
+            if not fe.id or not fe.emotion:
+                fe.emotion = attrs.get("emotion")
 
             db.flush()
 
@@ -1180,4 +1183,34 @@ def get_face_annotations(
             for a in annotations
         ]
     }
+
+
+@router.post("/{face_id}/metadata")
+def update_face_metadata(
+    face_id: int,
+    gender: str | None = Form(None),
+    age: int | None = Form(None),
+    emotion: str | None = Form(None),
+    db: Session = Depends(get_db),
+):
+    fe = db.query(FaceEncoding).filter(FaceEncoding.id == face_id).first()
+    if not fe:
+        raise HTTPException(404, "Face not found")
+
+    if gender is not None:
+        fe.gender = gender if gender not in ("", "null") else None
+    if age is not None:
+        fe.age = age
+    if emotion is not None:
+        fe.emotion = emotion if emotion not in ("", "null") else None
+
+    db.commit()
+    return {
+        "status": "success",
+        "face_id": face_id,
+        "gender": fe.gender,
+        "age": fe.age,
+        "emotion": fe.emotion,
+    }
+
 

@@ -152,6 +152,7 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
             detection_score=float(face.det_score),
             age=attrs["age"],
             gender=attrs["gender"],
+            emotion=attrs.get("emotion"),
         )
         db.add(fe)
         db.flush()

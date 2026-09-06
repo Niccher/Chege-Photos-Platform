@@ -57,6 +57,7 @@ class FaceEncoding(Base):
     face_image_path = Column(String(500), nullable=True)
     age = Column(Integer, nullable=True)
     gender = Column(String(10), nullable=True)
+    emotion = Column(String(50), nullable=True)
     created_at = Column(DateTime, server_default=func.now())
 
     person = relationship("Person", back_populates="faces",
