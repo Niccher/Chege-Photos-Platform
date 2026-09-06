@@ -189,8 +189,11 @@ class Settings(BaseSettings):
     # ── Object Detection ────────────────────────────────────────
     object_det_threshold: float = 0.5
 
-    # ── Sensitive attributes ────────────────────────────────────
+    # ── Sensitive attributes & NSFW Moderation ──────────────────
     include_sensitive_attributes: bool = True
+    nsfw_model_name: str = "opennsfw2"
+    nsfw_threshold: float = 0.70
+    auto_vault_nsfw: bool = True
 
     # ── Clustering ──────────────────────────────────────────────
     hdbscan_min_cluster_size: int = 2

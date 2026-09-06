@@ -54,6 +54,14 @@ def health_check(x_webapp_url: str | None = Header(None, alias="X-Webapp-Url")):
     except Exception:
         yolo_ok = False
 
+    # ── NSFW Health ─────────────────────────────────────────────
+    nsfw_ok = False
+    try:
+        from app.ml import nsfw
+        nsfw_ok = (nsfw._cached_detector is not None)
+    except Exception:
+        nsfw_ok = False
+
     overall = db_ok and qdrant_ok
 
     # ── Job Queue ────────────────────────────────────────────────
@@ -83,6 +91,7 @@ def health_check(x_webapp_url: str | None = Header(None, alias="X-Webapp-Url")):
         "models_loaded": models_loaded,
         "clip_loaded": clip_ok,
         "yolo_loaded": yolo_ok,
+        "nsfw_loaded": nsfw_ok,
         "queue_size": queue_size,
         "is_processing": is_processing,
         "concurrent_workers": workers_count,

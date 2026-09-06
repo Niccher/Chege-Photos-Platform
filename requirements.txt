@@ -16,3 +16,5 @@ Pillow==12.3.0
 torch
 transformers
 pytesseract==0.3.13
+opennsfw2
+nudenet

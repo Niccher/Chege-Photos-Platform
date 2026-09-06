@@ -123,6 +123,7 @@ def process_photo_pipeline_sync(
     scan_clip: bool,
     db: Session,
     webapp_url: str | None = None,
+    scan_nsfw: bool = True,
 ) -> dict:
     model = _require_models()
 
@@ -373,6 +374,31 @@ def process_photo_pipeline_sync(
         except Exception as exc:
             log.error("CLIP embedding failed for photo %d: %s", photo_id, exc)
 
+    # 4. Sensitive Content Moderation (NSFW / Intimate)
+    if scan_nsfw:
+        try:
+            from app.ml import nsfw
+            nsfw_res = nsfw.predict_nsfw(str(photo_path))
+            nsfw_score = float(nsfw_res.get("nsfw_score", 0.0))
+            is_nsfw = bool(nsfw_res.get("is_nsfw", False))
+            auto_vault = 1 if settings.auto_vault_nsfw else 0
+            db.execute(
+                text(
+                    f"""
+                    UPDATE `{_db_schema}`.tbl_photos 
+                    SET is_nsfw = :is_nsfw, 
+                        nsfw_score = :score, 
+                        scanned_nsfw = 1,
+                        is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
+                        vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
+                    WHERE id = :pid
+                    """
+                ),
+                {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "auto_vault": auto_vault, "pid": photo_id}
+            )
+        except Exception as exc:
+            log.error("NSFW sensitivity analysis failed for photo %d: %s", photo_id, exc)
+
     db.commit()
     return {"photo_id": photo_id, "face_count": len(results), "faces": results}
 
@@ -383,6 +409,7 @@ def process_photo_pipeline_queued(
     scan_tags: bool,
     scan_clip: bool,
     webapp_url: str | None = None,
+    scan_nsfw: bool = True,
 ):
     from app.database import SessionLocal
     from datetime import datetime, timezone
@@ -405,6 +432,7 @@ def process_photo_pipeline_queued(
             scan_clip=scan_clip,
             db=db,
             webapp_url=webapp_url,
+            scan_nsfw=scan_nsfw,
         )
 
         scan.status = "completed"
@@ -434,6 +462,7 @@ async def encode_photo(
     scan_faces: bool = Form(True),
     scan_tags: bool = Form(True),
     scan_clip: bool = Form(True),
+    scan_nsfw: bool = Form(True),
     async_task: bool = Form(False),
     webapp_url: str | None = Form(None),
     x_webapp_url: str | None = Header(None, alias="X-Webapp-Url"),
@@ -452,6 +481,7 @@ async def encode_photo(
             scan_tags=scan_tags,
             scan_clip=scan_clip,
             webapp_url=target_webapp,
+            scan_nsfw=scan_nsfw,
         )
         return {"status": "queued", "photo_id": photo_id}
     else:
@@ -462,6 +492,7 @@ async def encode_photo(
             scan_clip=scan_clip,
             db=db,
             webapp_url=target_webapp,
+            scan_nsfw=scan_nsfw,
         )
 
 
@@ -471,6 +502,7 @@ async def encode_batch_photos(
     scan_faces: bool = Form(True),
     scan_tags: bool = Form(True),
     scan_clip: bool = Form(True),
+    scan_nsfw: bool = Form(True),
     webapp_url: str | None = Form(None),
     x_webapp_url: str | None = Header(None, alias="X-Webapp-Url"),
 ):
@@ -489,6 +521,7 @@ async def encode_batch_photos(
             scan_tags=scan_tags,
             scan_clip=scan_clip,
             webapp_url=target_webapp,
+            scan_nsfw=scan_nsfw,
         )
         queued_count += 1
 

@@ -57,6 +57,11 @@ def get_model_inventory() -> list[dict]:
     face_loaded = get_model_status()
     yolo_loaded = object_detection._net is not None
     clip_loaded = semantic_search._clip_model is not None
+    try:
+        from app.ml import nsfw
+        nsfw_loaded = nsfw._cached_detector is not None
+    except Exception:
+        nsfw_loaded = False
 
     items = [
         {
@@ -135,6 +140,17 @@ def get_model_inventory() -> list[dict]:
             "purpose": "Projects images and text queries into a shared 512-d vector space for natural language search.",
             "is_loaded": clip_loaded,
             "download_group": "clip",
+        },
+        {
+            "id": "nsfw_model",
+            "name": f"NSFW Sensitive Media Detector ({settings.nsfw_model_name})",
+            "category": "Sensitive Content Moderation",
+            "pack": "nsfw",
+            "filename": "open_nsfw.onnx / vit / nudenet",
+            "path": "/app/models/open_nsfw.onnx" if settings.nsfw_model_name == "opennsfw2" else str(get_huggingface_model_dir("Falconsai/nsfw_image_detection")),
+            "purpose": "Detects intimate photos, adult content, and nudity to automatically quarantine them in the Locked Vault.",
+            "is_loaded": nsfw_loaded,
+            "download_group": "nsfw",
         },
     ]
 
