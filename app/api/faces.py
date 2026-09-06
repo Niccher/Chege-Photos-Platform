@@ -381,21 +381,40 @@ def process_photo_pipeline_sync(
             nsfw_res = nsfw.predict_nsfw(str(photo_path))
             nsfw_score = float(nsfw_res.get("nsfw_score", 0.0))
             is_nsfw = bool(nsfw_res.get("is_nsfw", False))
-            auto_vault = 1 if settings.auto_vault_nsfw else 0
-            db.execute(
-                text(
-                    f"""
-                    UPDATE `{_db_schema}`.tbl_photos 
-                    SET is_nsfw = :is_nsfw, 
-                        nsfw_score = :score, 
-                        scanned_nsfw = 1,
-                        is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
-                        vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
-                    WHERE id = :pid
-                    """
-                ),
-                {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "auto_vault": auto_vault, "pid": photo_id}
-            )
+            import json
+            details_json = json.dumps(nsfw_res)
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        UPDATE `{_db_schema}`.tbl_photos 
+                        SET is_nsfw = :is_nsfw, 
+                            nsfw_score = :score, 
+                            nsfw_details = :details,
+                            scanned_nsfw = 1,
+                            is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
+                            vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
+                        WHERE id = :pid
+                        """
+                    ),
+                    {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "details": details_json, "auto_vault": auto_vault, "pid": photo_id}
+                )
+            except Exception as db_col_err:
+                log.debug("Fallback to basic columns (nsfw_details not yet migrated): %s", db_col_err)
+                db.execute(
+                    text(
+                        f"""
+                        UPDATE `{_db_schema}`.tbl_photos 
+                        SET is_nsfw = :is_nsfw, 
+                            nsfw_score = :score, 
+                            scanned_nsfw = 1,
+                            is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
+                            vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
+                        WHERE id = :pid
+                        """
+                    ),
+                    {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "auto_vault": auto_vault, "pid": photo_id}
+                )
         except Exception as exc:
             log.error("NSFW sensitivity analysis failed for photo %d: %s", photo_id, exc)
 

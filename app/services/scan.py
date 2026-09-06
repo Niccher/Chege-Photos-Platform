@@ -250,23 +250,40 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
         nsfw_res = nsfw.predict_nsfw(str(photo_path))
         nsfw_score = float(nsfw_res.get("nsfw_score", 0.0))
         is_nsfw = bool(nsfw_res.get("is_nsfw", False))
-        from app.config import settings as _cfg
-        _db_schema = _cfg.effective_db_name
-        auto_vault = 1 if _cfg.auto_vault_nsfw else 0
-        db.execute(
-            text(
-                f"""
-                UPDATE `{_db_schema}`.tbl_photos 
-                SET is_nsfw = :is_nsfw, 
-                    nsfw_score = :score, 
-                    scanned_nsfw = 1,
-                    is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
-                    vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
-                WHERE id = :pid
-                """
-            ),
-            {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "auto_vault": auto_vault, "pid": photo_id}
-        )
+        import json
+        details_json = json.dumps(nsfw_res)
+        try:
+            db.execute(
+                text(
+                    f"""
+                    UPDATE `{_db_schema}`.tbl_photos 
+                    SET is_nsfw = :is_nsfw, 
+                        nsfw_score = :score, 
+                        nsfw_details = :details,
+                        scanned_nsfw = 1,
+                        is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
+                        vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
+                    WHERE id = :pid
+                    """
+                ),
+                {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "details": details_json, "auto_vault": auto_vault, "pid": photo_id}
+            )
+        except Exception as db_col_err:
+            log.debug("Fallback to basic columns in scan.py: %s", db_col_err)
+            db.execute(
+                text(
+                    f"""
+                    UPDATE `{_db_schema}`.tbl_photos 
+                    SET is_nsfw = :is_nsfw, 
+                        nsfw_score = :score, 
+                        scanned_nsfw = 1,
+                        is_vault = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1) THEN 1 ELSE is_vault END,
+                        vault_locked_at = CASE WHEN (:auto_vault = 1 AND :is_nsfw = 1 AND vault_locked_at IS NULL) THEN NOW() ELSE vault_locked_at END
+                    WHERE id = :pid
+                    """
+                ),
+                {"is_nsfw": 1 if is_nsfw else 0, "score": nsfw_score, "auto_vault": auto_vault, "pid": photo_id}
+            )
     except Exception as nsfw_err:
         log.warning("NSFW sensitivity analysis failed for photo %d: %s", photo_id, nsfw_err)
 

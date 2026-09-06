@@ -316,12 +316,39 @@ def predict_nsfw(
         score = float(res.get("nsfw_score", 0.0))
         is_nsfw = score >= thresh
 
+        active_name = _active_model_name or "opennsfw2"
+        details = res.get("details", {})
+
+        # Generate human-readable explanation
+        if active_name == "nudenet":
+            exposed = details.get("exposed_found", [])
+            if exposed:
+                label_names = [e.get("class", "").replace("_", " ").title() for e in exposed]
+                reason = f"Detected exposed anatomy: {', '.join(label_names[:3])} (confidence: {score*100:.1f}%)"
+            elif is_nsfw:
+                reason = f"Exposed anatomical features detected (confidence: {score*100:.1f}%)"
+            else:
+                reason = f"No exposed anatomy detected above threshold ({thresh*100:.1f}%)"
+        elif active_name == "falconsai":
+            if is_nsfw:
+                reason = f"Classified as sensitive by Vision Transformer ({score*100:.1f}% >= {thresh*100:.1f}%)"
+            else:
+                reason = f"Classified as safe by Vision Transformer ({score*100:.1f}% < {thresh*100:.1f}%)"
+        else:
+            if is_nsfw:
+                reason = f"Exceeded adult content threshold ({score*100:.1f}% >= {thresh*100:.1f}%) via OpenNSFW ResNet-50"
+            else:
+                reason = f"Within safe boundary ({score*100:.1f}% < {thresh*100:.1f}%) via OpenNSFW ResNet-50"
+
+        from datetime import datetime
         return {
             "nsfw_score": score,
             "is_nsfw": is_nsfw,
             "threshold": thresh,
-            "model": _active_model_name or "opennsfw2",
-            "details": res.get("details", {}),
+            "model": active_name,
+            "reason": reason,
+            "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            "details": details,
         }
     except Exception as exc:
         log.warning("NSFW prediction failed for %s: %s", image_path, exc)
@@ -330,5 +357,7 @@ def predict_nsfw(
             "is_nsfw": False,
             "threshold": thresh,
             "model": _active_model_name or "opennsfw2",
+            "reason": f"Analysis error: {exc}",
+            "scanned_at": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "error": str(exc),
         }
