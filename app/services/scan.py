@@ -224,12 +224,31 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
         except Exception as retry_exc:
             log.error("Object detection retry failed for photo %d: %s", photo_id, retry_exc)
 
+    # ── In-Image Text Search (OCR) ──
+    try:
+        from app.ml import ocr
+        extracted_text = ocr.extract_text_from_image(str(photo_path))
+        from app.config import settings as _cfg
+        _db_schema = _cfg.effective_db_name
+        if extracted_text:
+            db.execute(
+                text(f"UPDATE `{_db_schema}`.tbl_photos SET ocr_text = :txt, scanned_ocr = 1 WHERE id = :pid"),
+                {"txt": extracted_text, "pid": photo_id}
+            )
+        else:
+            db.execute(
+                text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_ocr = 1 WHERE id = :pid"),
+                {"pid": photo_id}
+            )
+    except Exception as ocr_err:
+        log.warning("OCR text extraction failed for photo %d: %s", photo_id, ocr_err)
+
     # Mark photo as fully scanned in tbl_photos
     try:
         from app.config import settings as _cfg
         _db_schema = _cfg.effective_db_name
         db.execute(
-            text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_face = 1, scanned_tag = 1, scanned_clip = 1 WHERE id = :pid"),
+            text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_face = 1, scanned_tag = 1, scanned_clip = 1, scanned_ocr = 1 WHERE id = :pid"),
             {"pid": photo_id}
         )
     except Exception as upd_err:

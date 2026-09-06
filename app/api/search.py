@@ -198,3 +198,65 @@ def similar_photos_endpoint(
         log.error("Visual similarity search failed for photo %d: %s", photo_id, exc)
         raise HTTPException(500, f"Similarity search failed: {exc}")
 
+
+@router.get("/ocr")
+def ocr_search_endpoint(
+    query: str = Query(..., min_length=1, description="Text snippet to search within photos"),
+    limit: int = Query(20, ge=1, le=100),
+    user_id: int | None = Query(None),
+):
+    """Search photos containing specific OCR-recognized text."""
+    try:
+        from app.database import get_db
+        from sqlalchemy import text
+        from app.config import settings
+
+        db = next(get_db())
+        _db_schema = settings.effective_db_name
+
+        sql = f"""
+            SELECT id, user_id, filename, path, thumbnail_path, ocr_text, taken_at
+            FROM `{_db_schema}`.tbl_photos
+            WHERE ocr_text LIKE :pattern
+        """
+        params = {"pattern": f"%{query}%"}
+        if user_id is not None:
+            sql += " AND user_id = :uid"
+            params["uid"] = user_id
+
+        sql += " ORDER BY id DESC LIMIT :limit"
+        params["limit"] = limit
+
+        rows = db.execute(text(sql), params).fetchall()
+        results = []
+        for r in rows:
+            ocr_snippet = ""
+            if r.ocr_text:
+                lower_text = r.ocr_text.lower()
+                idx = lower_text.find(query.lower())
+                if idx >= 0:
+                    start = max(0, idx - 40)
+                    end = min(len(r.ocr_text), idx + len(query) + 40)
+                    ocr_snippet = ("..." if start > 0 else "") + r.ocr_text[start:end].strip() + ("..." if end < len(r.ocr_text) else "")
+                else:
+                    ocr_snippet = r.ocr_text[:80].strip() + "..."
+
+            results.append({
+                "photo_id": int(r.id),
+                "filename": r.filename,
+                "path": r.path,
+                "thumbnail_path": r.thumbnail_path,
+                "ocr_snippet": ocr_snippet,
+                "taken_at": str(r.taken_at) if r.taken_at else None,
+            })
+
+        return {
+            "query": query,
+            "count": len(results),
+            "results": results,
+        }
+    except Exception as exc:
+        log.error("OCR text search failed for query '%s': %s", query, exc)
+        raise HTTPException(500, f"OCR search failed: {exc}")
+
+
