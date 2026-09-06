@@ -47,10 +47,19 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
 
     from app.config import settings as _cfg
     _db_schema = _cfg.effective_db_name
-    photo = db.execute(
-        text(f"SELECT id, path FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
-        {"pid": photo_id},
-    ).fetchone()
+    try:
+        photo = db.execute(
+            text(f"SELECT id, path, ignore_faces FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+            {"pid": photo_id},
+        ).fetchone()
+        ignore_faces = bool(photo.ignore_faces) if hasattr(photo, "ignore_faces") else bool(photo[2])
+    except Exception:
+        photo = db.execute(
+            text(f"SELECT id, path FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+            {"pid": photo_id},
+        ).fetchone()
+        ignore_faces = False
+
     if not photo:
         raise ValueError(f"Photo {photo_id} not found")
 
@@ -102,8 +111,17 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
             photo_path.unlink(missing_ok=True)
         except Exception:
             pass
-        raise ValueError(f"Could not read photo file at {photo_path}: {img_err}")
-    faces = model.get(img)
+    if ignore_faces:
+        faces = []
+        try:
+            db.execute(
+                text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_face = 1 WHERE id = :pid"),
+                {"pid": photo_id}
+            )
+        except Exception:
+            pass
+    else:
+        faces = model.get(img)
 
     qdrant = get_qdrant()
     results = []
@@ -250,6 +268,7 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
         nsfw_res = nsfw.predict_nsfw(str(photo_path))
         nsfw_score = float(nsfw_res.get("nsfw_score", 0.0))
         is_nsfw = bool(nsfw_res.get("is_nsfw", False))
+        auto_vault = 1 if getattr(settings, "auto_vault_nsfw", True) else 0
         import json
         details_json = json.dumps(nsfw_res)
         try:

@@ -132,13 +132,32 @@ def process_photo_pipeline_sync(
 
     from app.config import settings as _cfg
     _db_schema = _cfg.effective_db_name
-    photo = db.execute(
-        text(f"SELECT id, path, user_id FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
-        {"pid": photo_id},
-    ).fetchone()
+    try:
+        photo = db.execute(
+            text(f"SELECT id, path, user_id, ignore_faces FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+            {"pid": photo_id},
+        ).fetchone()
+        ignore_faces = bool(photo.ignore_faces) if hasattr(photo, "ignore_faces") else bool(photo[3])
+    except Exception:
+        photo = db.execute(
+            text(f"SELECT id, path, user_id FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+            {"pid": photo_id},
+        ).fetchone()
+        ignore_faces = False
+
     if not photo:
         raise HTTPException(404, "Photo not found")
     user_id = photo.user_id if hasattr(photo, "user_id") else (photo[2] if len(photo) > 2 else None)
+
+    if ignore_faces:
+        scan_faces = False
+        try:
+            db.execute(
+                text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_face = 1 WHERE id = :pid"),
+                {"pid": photo_id}
+            )
+        except Exception:
+            pass
 
     rel = photo.path.strip().lstrip("/").removeprefix("uploads/").lstrip("/")
     uploads_base = Path(settings.uploads_dir)
@@ -381,6 +400,7 @@ def process_photo_pipeline_sync(
             nsfw_res = nsfw.predict_nsfw(str(photo_path))
             nsfw_score = float(nsfw_res.get("nsfw_score", 0.0))
             is_nsfw = bool(nsfw_res.get("is_nsfw", False))
+            auto_vault = 1 if getattr(settings, "auto_vault_nsfw", True) else 0
             import json
             details_json = json.dumps(nsfw_res)
             try:
@@ -988,6 +1008,94 @@ def merge_persons(
     db.delete(source)
     db.commit()
     return {"merged_into": target_person_id, "deleted_person": source_person_id}
+
+
+@router.post("/discard-photo-faces")
+def discard_photo_faces(
+    body: dict,
+    db: Session = Depends(get_db),
+):
+    """
+    Purges all detected face encodings and Qdrant face vectors for the given photo(s),
+    and cleans up any orphaned people/clusters.
+    Does NOT delete photo tags, CLIP vectors, or the photo itself.
+    """
+    photo_ids = body.get("photo_ids")
+    if not photo_ids and "photo_id" in body:
+        photo_ids = [body["photo_id"]]
+
+    if not photo_ids:
+        raise HTTPException(400, "photo_id or photo_ids list required")
+
+    photo_ids = [int(pid) for pid in photo_ids]
+
+    faces = db.query(FaceEncoding).filter(
+        FaceEncoding.photo_id.in_(photo_ids)
+    ).all()
+
+    qdrant_points = [f.qdrant_point_id for f in faces if f.qdrant_point_id]
+    person_ids = list({f.person_id for f in faces if f.person_id is not None})
+
+    # 1. Delete face vectors from Qdrant
+    qdrant = get_qdrant()
+    for pid in qdrant_points:
+        try:
+            qdrant.delete(
+                collection_name=settings.qdrant_collection,
+                points_selector=[pid],
+            )
+        except Exception as exc:
+            log.warning("Could not delete face point %s from Qdrant: %s", pid, exc)
+
+    # 2. Delete face encodings from MySQL
+    deleted_faces = db.query(FaceEncoding).filter(
+        FaceEncoding.photo_id.in_(photo_ids)
+    ).delete(synchronize_session=False)
+
+    # 3. Clean up orphaned persons and their clusters
+    deleted_persons = 0
+    centroid_points_removed = 0
+    for pid in person_ids:
+        remaining = db.query(FaceEncoding).filter(
+            FaceEncoding.person_id == pid
+        ).count()
+        if remaining == 0:
+            clusters = db.query(FaceCluster).filter(FaceCluster.person_id == pid).all()
+            for c in clusters:
+                if c.centroid_point_id:
+                    try:
+                        qdrant.delete(
+                            collection_name=settings.qdrant_collection + "_centroids",
+                            points_selector=[c.centroid_point_id],
+                        )
+                        centroid_points_removed += 1
+                    except Exception:
+                        pass
+            db.query(FaceCluster).filter(FaceCluster.person_id == pid).delete()
+            db.query(Person).filter(Person.id == pid).delete()
+            deleted_persons += 1
+
+    # 4. Mark photos as ignore_faces = 1, scanned_face = 1
+    try:
+        from app.config import settings as _cfg
+        _db_schema = _cfg.effective_db_name
+        pids_str = ",".join(str(int(pid)) for pid in photo_ids)
+        db.execute(
+            text(f"UPDATE `{_db_schema}`.tbl_photos SET ignore_faces = 1, scanned_face = 1 WHERE id IN ({pids_str})")
+        )
+    except Exception as exc:
+        log.warning("Could not update ignore_faces in database: %s", exc)
+
+    db.commit()
+
+    return {
+        "status": "success",
+        "message": f"Discarded {deleted_faces} face(s) across {len(photo_ids)} photo(s)",
+        "deleted_faces": deleted_faces,
+        "deleted_persons": deleted_persons,
+        "qdrant_points_removed": len(qdrant_points),
+        "centroid_points_removed": centroid_points_removed,
+    }
 
 
 @router.post("/delete-by-photo-ids")

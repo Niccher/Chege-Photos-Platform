@@ -301,6 +301,119 @@ def get_detector(model_name: str | None = None) -> BaseNSFWDetector:
     return _cached_detector
 
 
+def verify_sensitive_gate(
+    image_path: str,
+    base_score: float,
+    threshold: float,
+) -> dict:
+    """
+    2-Stage Hierarchical Verification Gate:
+    Stage 1: Fast Screening via OpenNSFW (or active detector).
+    Stage 2 (Verification Gate):
+      Check A: YOLOv8 Human Presence (Class 0: "person", confidence >= 0.35).
+               If no human is detected, suppresses false positives like food,
+               sand dunes, furniture, and animals.
+      Check B: CLIP Zero-Shot Art & Classical Statue Filter.
+               If classified as a marble statue, museum sculpture, painting,
+               or comic illustration, suppresses the sensitive flag.
+    """
+    # Check A: Human Presence via YOLOv8
+    has_person = True
+    max_person_conf = 0.0
+    try:
+        from app.ml.object_detection import detect_objects
+        objects = detect_objects(image_path, conf_threshold=0.35)
+        person_detections = [o for o in objects if o.get("tag") == "person"]
+        if person_detections:
+            max_person_conf = max([float(o.get("confidence", 0.0)) for o in person_detections])
+            has_person = max_person_conf >= 0.35
+        else:
+            has_person = False
+            max_person_conf = 0.0
+    except Exception as exc:
+        log.warning("Stage 2 Check A (YOLO person presence) failed: %s", exc)
+        has_person = True
+        max_person_conf = 0.0
+
+    if not has_person:
+        return {
+            "gate_enabled": True,
+            "gate_verified": False,
+            "suppressed": True,
+            "suppression_reason": f"Suppressed by Check A: No human presence detected (YOLO person confidence {max_person_conf*100:.1f}% < 35%)",
+            "human_presence": False,
+            "yolo_person_confidence": round(float(max_person_conf), 4),
+            "art_statue_filtered": False,
+            "clip_top_label": None,
+            "clip_probabilities": {},
+        }
+
+    # Check B: Art / Statue Zero-Shot Filter via CLIP
+    is_art_or_statue = False
+    clip_probs = {}
+    top_label = ""
+    candidate_labels = [
+        "a photographic picture of an intimate person",
+        "a museum marble statue or classical sculpture",
+        "a painting, artistic drawing, or comic illustration",
+        "a landscape, inanimate object, or furniture",
+    ]
+
+    try:
+        from app.ml.semantic_search import get_clip_model_and_processor
+        import torch
+        from PIL import Image
+
+        model, processor = get_clip_model_and_processor()
+        img = Image.open(image_path).convert("RGB")
+        inputs = processor(text=candidate_labels, images=img, return_tensors="pt", padding=True)
+        with torch.no_grad():
+            outputs = model(**inputs)
+            logits = outputs.logits_per_image  # shape (1, 4)
+            probs = torch.nn.functional.softmax(logits, dim=-1)[0].cpu().numpy()
+
+        for lbl, p in zip(candidate_labels, probs):
+            clip_probs[lbl] = round(float(p), 4)
+
+        top_idx = int(np.argmax(probs))
+        top_label = candidate_labels[top_idx]
+        real_person_prob = float(probs[0])
+        statue_art_prob = float(probs[1]) + float(probs[2])
+
+        # If museum statue or classical sculpture or painting/comic has higher confidence than real photo
+        if top_idx in (1, 2, 3) or (statue_art_prob > real_person_prob):
+            is_art_or_statue = True
+    except Exception as exc:
+        log.warning("Stage 2 Check B (CLIP art/statue filter) failed: %s", exc)
+        is_art_or_statue = False
+
+    if is_art_or_statue:
+        return {
+            "gate_enabled": True,
+            "gate_verified": False,
+            "suppressed": True,
+            "suppression_reason": f"Suppressed by Check B: Classified as non-photographic artwork or sculpture via CLIP ({top_label}, {clip_probs.get(top_label, 0.0)*100:.1f}%)",
+            "human_presence": True,
+            "yolo_person_confidence": round(float(max_person_conf), 4),
+            "art_statue_filtered": True,
+            "clip_top_label": top_label,
+            "clip_probabilities": clip_probs,
+        }
+
+    # Both checks passed!
+    return {
+        "gate_enabled": True,
+        "gate_verified": True,
+        "suppressed": False,
+        "suppression_reason": None,
+        "human_presence": True,
+        "yolo_person_confidence": round(float(max_person_conf), 4),
+        "art_statue_filtered": False,
+        "clip_top_label": top_label or candidate_labels[0],
+        "clip_probabilities": clip_probs,
+    }
+
+
 def predict_nsfw(
     image_path: str,
     model_name: str | None = None,
@@ -308,37 +421,43 @@ def predict_nsfw(
 ) -> dict:
     """
     Analyze image and return standardized sensitivity evaluation.
+    Utilizes 2-stage hierarchical gate when score >= threshold to suppress false positives.
     """
     thresh = float(threshold if threshold is not None else settings.nsfw_threshold)
     try:
         detector = get_detector(model_name)
         res = detector.predict(image_path)
         score = float(res.get("nsfw_score", 0.0))
-        is_nsfw = score >= thresh
-
         active_name = _active_model_name or "opennsfw2"
         details = res.get("details", {})
 
-        # Generate human-readable explanation
-        if active_name == "nudenet":
-            exposed = details.get("exposed_found", [])
-            if exposed:
-                label_names = [e.get("class", "").replace("_", " ").title() for e in exposed]
-                reason = f"Detected exposed anatomy: {', '.join(label_names[:3])} (confidence: {score*100:.1f}%)"
-            elif is_nsfw:
-                reason = f"Exposed anatomical features detected (confidence: {score*100:.1f}%)"
+        # ── 2-Stage Hierarchical Verification Gate ────────────────
+        gate_info = None
+        if score >= thresh:
+            gate_info = verify_sensitive_gate(image_path, score, thresh)
+            if gate_info["suppressed"]:
+                is_nsfw = False
+                reason = gate_info["suppression_reason"]
             else:
-                reason = f"No exposed anatomy detected above threshold ({thresh*100:.1f}%)"
-        elif active_name == "falconsai":
-            if is_nsfw:
-                reason = f"Classified as sensitive by Vision Transformer ({score*100:.1f}% >= {thresh*100:.1f}%)"
-            else:
-                reason = f"Classified as safe by Vision Transformer ({score*100:.1f}% < {thresh*100:.1f}%)"
+                is_nsfw = True
+                reason = f"Confirmed sensitive human photo (passed Stage 2 human & non-art gates, score {score*100:.1f}% >= {thresh*100:.1f}%)"
         else:
-            if is_nsfw:
-                reason = f"Exceeded adult content threshold ({score*100:.1f}% >= {thresh*100:.1f}%) via OpenNSFW ResNet-50"
+            is_nsfw = False
+            gate_info = {
+                "gate_enabled": True,
+                "gate_verified": None,
+                "suppressed": False,
+                "skipped": True,
+                "reason": f"Within safe boundary ({score*100:.1f}% < {thresh*100:.1f}%) via {active_name}",
+            }
+            if active_name == "nudenet":
+                reason = f"No exposed anatomy detected above threshold ({thresh*100:.1f}%)"
+            elif active_name == "falconsai":
+                reason = f"Classified as safe by Vision Transformer ({score*100:.1f}% < {thresh*100:.1f}%)"
             else:
                 reason = f"Within safe boundary ({score*100:.1f}% < {thresh*100:.1f}%) via OpenNSFW ResNet-50"
+
+        details["gate_info"] = gate_info
 
         from datetime import datetime
         return {
