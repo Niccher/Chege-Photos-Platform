@@ -22,7 +22,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # ── Pre-download all ML Models during Docker Build ───────────────────────────
-RUN mkdir -p /app/models && python scripts/download_all_models.py
+RUN mkdir -p /app/models && (python scripts/download_all_models.py || true)
 
 ENV PORT=8000
 EXPOSE 8000

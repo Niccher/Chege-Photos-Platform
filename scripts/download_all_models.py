@@ -1,10 +1,14 @@
 #!/usr/bin/env python3
 """
-Pre-download all machine learning model weights during Docker build.
-Ensures zero-latency container boot and offline runtime readiness.
+Robust build-time model weight downloader for Docker builds.
+Pre-downloads InsightFace (buffalo_l), YOLOv8 Nano, CLIP, and OpenNSFW
+with clean progress logging, 1MB streaming chunks, and retry resilience.
 """
 import os
 import gc
+import sys
+import time
+import zipfile
 import logging
 import urllib.request
 from pathlib import Path
@@ -12,49 +16,89 @@ from pathlib import Path
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
 log = logging.getLogger("download_all_models")
 
-MODELS_DIR = Path("/app/models")
-MODELS_DIR.mkdir(parents=True, exist_ok=True)
+MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/app/models"))
+try:
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+except Exception:
+    MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
+    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+
+USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+def download_file_stream(url: str, dest: Path, description: str, max_retries: int = 3) -> bool:
+    """Download file in 1MB chunks with User-Agent header and retry logic."""
+    if dest.exists() and dest.stat().st_size > 100000:
+        log.info("✓ %s already present (%d bytes), skipping.", description, dest.stat().st_size)
+        return True
+
+    dest.parent.mkdir(parents=True, exist_ok=True)
+    temp_dest = dest.with_suffix(".tmp")
+
+    for attempt in range(1, max_retries + 1):
+        try:
+            log.info("Downloading %s (Attempt %d/%d) from %s ...", description, attempt, max_retries, url)
+            req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+            with urllib.request.urlopen(req, timeout=120) as resp:
+                total_bytes = int(resp.headers.get("Content-Length", 0))
+                downloaded = 0
+                last_logged_pct = 0
+                with open(temp_dest, "wb") as f:
+                    while True:
+                        chunk = resp.read(1024 * 1024)  # 1 MB chunk
+                        if not chunk:
+                            break
+                        f.write(chunk)
+                        downloaded += len(chunk)
+                        if total_bytes > 0:
+                            pct = int((downloaded / total_bytes) * 100)
+                            if pct >= last_logged_pct + 25:
+                                log.info("  -> %s progress: %d%% (%d / %d MB)", description, pct, downloaded // 1048576, total_bytes // 1048576)
+                                last_logged_pct = pct
+
+            temp_dest.rename(dest)
+            log.info("✓ %s downloaded successfully (%d bytes).", description, dest.stat().st_size)
+            return True
+        except Exception as exc:
+            log.warning("✗ Download attempt %d failed for %s: %s", attempt, description, exc)
+            if temp_dest.exists():
+                temp_dest.unlink(missing_ok=True)
+            if attempt < max_retries:
+                time.sleep(3)
+
+    log.error("Failed to download %s after %d attempts.", description, max_retries)
+    return False
 
 def download_insightface():
-    log.info("── 1/5: Downloading InsightFace model pack (buffalo_l) ──")
-    try:
-        from insightface.app import FaceAnalysis
-        pack_dir = MODELS_DIR / "insightface_models"
-        app = FaceAnalysis(name="buffalo_l", root=str(pack_dir), providers=["CPUExecutionProvider"])
-        app.prepare(ctx_id=-1, det_thresh=0.5)
-        log.info("✓ InsightFace models downloaded and prepared at %s", pack_dir)
-    except Exception as e:
-        log.error("✗ Failed to download InsightFace models: %s", e)
-        raise
+    log.info("── 1/4: InsightFace model pack (buffalo_l) ──")
+    target_dir = MODELS_DIR / "insightface_models" / "models" / "buffalo_l"
+    det_onnx = target_dir / "det_10g.onnx"
+    if det_onnx.exists() and det_onnx.stat().st_size > 1000000:
+        log.info("✓ InsightFace buffalo_l models already extracted at %s", target_dir)
+        return
+
+    zip_path = MODELS_DIR / "insightface_models" / "models" / "buffalo_l.zip"
+    url = "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
+
+    success = download_file_stream(url, zip_path, "InsightFace buffalo_l.zip")
+    if success and zip_path.exists():
+        try:
+            log.info("Extracting %s into %s ...", zip_path, target_dir)
+            target_dir.mkdir(parents=True, exist_ok=True)
+            with zipfile.ZipFile(zip_path, "r") as z:
+                z.extractall(target_dir)
+            zip_path.unlink(missing_ok=True)
+            log.info("✓ InsightFace buffalo_l models extracted successfully.")
+        except Exception as exc:
+            log.error("Failed to extract InsightFace zip: %s", exc)
 
 def download_yolov8():
-    log.info("── 2/5: Downloading YOLOv8 Nano object detection model ──")
+    log.info("── 2/4: YOLOv8 Nano object detection model ──")
     yolo_url = "https://huggingface.co/Kalray/yolov8/resolve/main/yolov8n.onnx"
     yolo_dest = MODELS_DIR / "yolov8n.onnx"
-    if yolo_dest.exists() and yolo_dest.stat().st_size > 1000000:
-        log.info("✓ YOLOv8 model already exists at %s", yolo_dest)
-        return
-    try:
-        urllib.request.urlretrieve(yolo_url, str(yolo_dest))
-        log.info("✓ YOLOv8 model downloaded successfully (%d bytes)", yolo_dest.stat().st_size)
-    except Exception as e:
-        log.error("✗ Failed to download YOLOv8 model: %s", e)
-        raise
-
-def download_clip():
-    log.info("── 3/5: Downloading CLIP Transformer (openai/clip-vit-base-patch32) ──")
-    try:
-        from transformers import CLIPModel, CLIPProcessor
-        clip_name = "openai/clip-vit-base-patch32"
-        CLIPProcessor.from_pretrained(clip_name)
-        CLIPModel.from_pretrained(clip_name)
-        log.info("✓ CLIP processor and model downloaded into Hugging Face cache")
-    except Exception as e:
-        log.error("✗ Failed to download CLIP model: %s", e)
-        raise
+    download_file_stream(yolo_url, yolo_dest, "YOLOv8 Nano ONNX")
 
 def download_opennsfw():
-    log.info("── 4/5: Downloading OpenNSFW ResNet-50 ONNX model ──")
+    log.info("── 3/4: OpenNSFW ResNet-50 ONNX model ──")
     nsfw_dest = MODELS_DIR / "open_nsfw.onnx"
     if nsfw_dest.exists() and nsfw_dest.stat().st_size > 1000000:
         log.info("✓ OpenNSFW model already exists at %s", nsfw_dest)
@@ -76,42 +120,47 @@ def download_opennsfw():
         log.debug("Package copy skipped: %s", e)
 
     nsfw_url = "https://raw.githubusercontent.com/bhky/opennsfw2/master/opennsfw2/data/open_nsfw-90be3a4a.onnx"
-    try:
-        urllib.request.urlretrieve(nsfw_url, str(nsfw_dest))
-        log.info("✓ OpenNSFW model downloaded successfully (%d bytes)", nsfw_dest.stat().st_size)
-    except Exception as e:
-        log.error("✗ Failed to download OpenNSFW model: %s", e)
-        raise
+    download_file_stream(nsfw_url, nsfw_dest, "OpenNSFW ONNX")
 
-def download_falconsai_vit():
-    log.info("── 5/5: Downloading Falconsai ViT NSFW model ──")
+def download_clip():
+    log.info("── 4/4: CLIP Transformer (openai/clip-vit-base-patch32) ──")
     try:
-        from transformers import AutoImageProcessor, AutoModelForImageClassification
-        vit_name = "Falconsai/nsfw_image_detection"
-        AutoImageProcessor.from_pretrained(vit_name)
-        AutoModelForImageClassification.from_pretrained(vit_name)
-        log.info("✓ Falconsai ViT processor and model weights downloaded into Hugging Face cache")
-    except Exception as e:
-        log.warning("Falconsai ViT pre-download notice (optional alternative): %s", e)
+        from transformers import CLIPModel, CLIPProcessor
+        clip_name = "openai/clip-vit-base-patch32"
+        CLIPProcessor.from_pretrained(clip_name)
+        CLIPModel.from_pretrained(clip_name)
+        log.info("✓ CLIP processor and model downloaded into Hugging Face cache.")
+    except Exception as exc:
+        log.warning("CLIP pre-download encountered non-fatal issue: %s. (Will download at runtime on first search)", exc)
 
 def main():
-    log.info("Starting build-time pre-download of all ML models...")
-    download_insightface()
+    log.info("Starting build-time pre-download of ML models...")
+    try:
+        download_insightface()
+    except Exception as e:
+        log.warning("InsightFace download warning: %s", e)
     gc.collect()
 
-    download_yolov8()
+    try:
+        download_yolov8()
+    except Exception as e:
+        log.warning("YOLOv8 download warning: %s", e)
     gc.collect()
 
-    download_clip()
+    try:
+        download_opennsfw()
+    except Exception as e:
+        log.warning("OpenNSFW download warning: %s", e)
     gc.collect()
 
-    download_opennsfw()
+    try:
+        download_clip()
+    except Exception as e:
+        log.warning("CLIP download warning: %s", e)
     gc.collect()
 
-    download_falconsai_vit()
-    gc.collect()
-
-    log.info("All ML models successfully baked into container!")
+    log.info("Build-time model download stage finished.")
+    sys.exit(0)
 
 if __name__ == "__main__":
     main()
