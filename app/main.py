@@ -66,6 +66,14 @@ async def lifespan(app: FastAPI):
         except Exception as exc:
             log.warning("Models not loaded on startup: %s", exc)
 
+        # ── NSFW Detector ───────────────────────────────────────
+        try:
+            from app.ml.nsfw import get_detector
+            await asyncio.to_thread(get_detector, settings.nsfw_model_name)
+            log.info("NSFW detector preloaded (%s)", settings.nsfw_model_name)
+        except Exception as exc:
+            log.warning("NSFW detector not preloaded on startup: %s", exc)
+
     asyncio.create_task(init_services_background())
 
 

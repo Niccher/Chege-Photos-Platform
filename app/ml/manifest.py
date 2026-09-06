@@ -147,7 +147,9 @@ def get_model_inventory() -> list[dict]:
             "category": "Sensitive Content Moderation",
             "pack": "nsfw",
             "filename": "open_nsfw.onnx / vit / nudenet",
-            "path": "/app/models/open_nsfw.onnx" if settings.nsfw_model_name == "opennsfw2" else str(get_huggingface_model_dir("Falconsai/nsfw_image_detection")),
+            "path": "/app/models/open_nsfw.onnx" if settings.nsfw_model_name == "opennsfw2" else (
+                str(get_huggingface_model_dir("Falconsai/nsfw_image_detection")) if settings.nsfw_model_name == "vit" else os.path.expanduser("~/.nudenet")
+            ),
             "purpose": "Detects intimate photos, adult content, and nudity to automatically quarantine them in the Locked Vault.",
             "is_loaded": nsfw_loaded,
             "download_group": "nsfw",
@@ -200,10 +202,18 @@ def ensure_all_models_ready() -> dict[str, bool]:
     from app.ml.loader import get_model_status, load_models
     from app.ml import object_detection, semantic_search
 
+    nsfw_loaded = False
+    try:
+        from app.ml import nsfw
+        nsfw_loaded = nsfw._cached_detector is not None
+    except Exception:
+        pass
+
     status = {
         "insightface": get_model_status(),
         "yolov8n": object_detection._net is not None,
         "clip": semantic_search._clip_model is not None,
+        "nsfw": nsfw_loaded,
     }
 
     # 1. InsightFace
@@ -241,6 +251,19 @@ def ensure_all_models_ready() -> dict[str, bool]:
             log.info("CLIP successfully loaded.")
         except Exception as exc:
             log.error("Failed to load CLIP: %s", exc)
+        gc.collect()
+
+    # 4. NSFW
+    if not status["nsfw"]:
+        log.warning("NSFW detector missing or uninitialized. Downloading/loading now...")
+        gc.collect()
+        try:
+            from app.ml import nsfw
+            nsfw.get_detector(settings.nsfw_model_name)
+            status["nsfw"] = nsfw._cached_detector is not None
+            log.info("NSFW detector successfully loaded.")
+        except Exception as exc:
+            log.error("Failed to load NSFW detector: %s", exc)
         gc.collect()
 
     return status

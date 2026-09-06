@@ -34,6 +34,42 @@ class BaseNSFWDetector(ABC):
         pass
 
 
+def ensure_opennsfw_onnx_present() -> Path:
+    """Ensures /app/models/open_nsfw.onnx exists on disk for OpenCV DNN and manifest inventory."""
+    if OPENNSFW_ONNX_PATH.exists() and OPENNSFW_ONNX_PATH.stat().st_size > 1000000:
+        return OPENNSFW_ONNX_PATH
+
+    try:
+        OPENNSFW_ONNX_PATH.parent.mkdir(parents=True, exist_ok=True)
+    except Exception as e:
+        log.warning("Could not create directory for opennsfw onnx model: %s", e)
+
+    # 1. Try copying from installed opennsfw2 package
+    try:
+        import opennsfw2 as _pkg
+        pkg_dir = Path(_pkg.__file__).parent
+        data_dir = pkg_dir / "data"
+        if data_dir.exists():
+            for f in data_dir.glob("*.onnx"):
+                if f.is_file() and f.stat().st_size > 1000000:
+                    import shutil
+                    shutil.copy2(f, OPENNSFW_ONNX_PATH)
+                    log.info("Copied opennsfw2 ONNX model from package data: %s -> %s", f, OPENNSFW_ONNX_PATH)
+                    return OPENNSFW_ONNX_PATH
+    except Exception as e:
+        log.debug("Could not copy from opennsfw2 package data: %s", e)
+
+    # 2. Download from official repository
+    log.info("Downloading OpenNSFW ONNX model (~6.2 MB) from %s ...", OPENNSFW_DOWNLOAD_URL)
+    try:
+        urllib.request.urlretrieve(OPENNSFW_DOWNLOAD_URL, str(OPENNSFW_ONNX_PATH))
+        log.info("OpenNSFW ONNX model downloaded successfully to %s", OPENNSFW_ONNX_PATH)
+    except Exception as exc:
+        log.error("Failed to download OpenNSFW ONNX model: %s", exc)
+
+    return OPENNSFW_ONNX_PATH
+
+
 class OpenNSFW2Detector(BaseNSFWDetector):
     """
     Lightweight, fast Yahoo Open_NSFW ResNet-50 detector.
@@ -43,30 +79,21 @@ class OpenNSFW2Detector(BaseNSFWDetector):
         self.net = None
         self.use_library = False
 
+        # Ensure model weights file is present on disk for manifest and fallback
+        ensure_opennsfw_onnx_present()
+
         # Attempt 1: Check if opennsfw2 library is importable
         try:
             import opennsfw2 as nsfw
             self.nsfw_lib = nsfw
             self.use_library = True
             log.info("OpenNSFW2: using opennsfw2 package for inference")
-            return
         except Exception as exc:
             log.info("OpenNSFW2 package not directly usable (%s), falling back to OpenCV DNN ONNX", exc)
-
-        # Attempt 2: Load via OpenCV DNN
-        self._init_onnx()
+            self._init_onnx()
 
     def _init_onnx(self):
-        if not OPENNSFW_ONNX_PATH.exists():
-            OPENNSFW_ONNX_PATH.parent.mkdir(parents=True, exist_ok=True)
-            log.info("Downloading OpenNSFW ONNX model from %s ...", OPENNSFW_DOWNLOAD_URL)
-            try:
-                urllib.request.urlretrieve(OPENNSFW_DOWNLOAD_URL, str(OPENNSFW_ONNX_PATH))
-                log.info("OpenNSFW ONNX model downloaded successfully")
-            except Exception as exc:
-                log.error("Failed to download OpenNSFW ONNX model: %s", exc)
-                raise
-
+        ensure_opennsfw_onnx_present()
         try:
             self.net = cv2.dnn.readNetFromONNX(str(OPENNSFW_ONNX_PATH))
             self.net.setPreferableBackend(cv2.dnn.DNN_BACKEND_OPENCV)
