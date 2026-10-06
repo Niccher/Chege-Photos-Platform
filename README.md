@@ -3,7 +3,7 @@
 FastAPI computer vision microservice powering face detection, 512-dimensional ArcFace embeddings, HDBSCAN clustering, YOLOv8 object tagging, and OpenAI CLIP semantic search for the Chege Photos platform.
 
 **Stack**: Python 3.12 / FastAPI, InsightFace, YOLOv8, OpenAI CLIP, Qdrant, MySQL, PyTorch, Docker Compose.  
-**Audience**: If you only need to run or test the ML service, this page is enough. Software & ML engineers: [docs/README.md](docs/README.md).
+**If you only need to run or test the ML service, this page is enough.** Software & ML engineers: [docs/README.md](docs/README.md).
 
 ---
 
@@ -91,26 +91,22 @@ Detailed diagnostic steps and recovery procedures: [docs/user/troubleshooting.md
 
 ---
 
-## Engineering Documentation
+## Software Engineers
 
-For architecture, database schemas, API contracts, and development workflows, see the **[Engineering Handbook](docs/README.md)**:
+For architecture, vector schemas, API contracts, and development workflows, see the **[Engineering Handbook](docs/README.md)**:
 
 * [Architecture Overview](docs/architecture/overview.md)
 * [Inter-Service Communication](docs/architecture/communication.md)
 * [Data & Storage Models (Qdrant & MySQL)](docs/architecture/data-and-storage.md)
-* [Deployment Architecture](docs/architecture/deployment.md)
+* [Threat Model & Security Hardening](docs/architecture/threat-model.md)
 * [REST API Contract](docs/api/contract.md)
 * [FastAPI Service Details](docs/services/fastapi.md)
 * [ML Models & Pipelines](docs/services/ml.md)
-* [Local Development Guide](docs/engineering/local-development.md)
 * [Making Changes & Definition of Done](docs/engineering/making-changes.md)
-* [Testing Guide](docs/engineering/testing.md)
 
 ---
 
 ## Ecosystem & Multi-Repo Architecture
-
-The Chege Photos platform consists of three coordinated repositories:
 
 ```
 [ Android Companion App ]
@@ -124,23 +120,13 @@ The Chege Photos platform consists of three coordinated repositories:
 [ ML Chege Photos ] (Port 9051) ─────── Qdrant Vector DB (Port 9052)
 ```
 
-### Integration Points
-1. **Network & Storage**:
-   - The ML service connects to the `hosts-shared-network` created by the WebApp stack.
-   - It reads image files mounted from the WebApp's `uploads/` volume, or hydrates missing images dynamically via the WebApp URL (`X-Webapp-Url`).
-2. **Mobile Independence**:
-   - The Android companion client connects strictly to the WebApp (never directly to the ML container).
-   - The WebApp invokes ML endpoints (face clustering, YOLO tagging, CLIP similarity) asynchronously and returns results to Android.
+### Sibling Ecosystem Repositories
 
----
-
-## Sibling Repositories
-
-| Repository | Responsibility | Tech Stack |
-|---|---|---|
-| **[Chege-Photos-ML](https://github.com/niccher/Chege-Photos-ML)** | Face Detection, YOLOv8, CLIP & Qdrant | Python 3.12 / FastAPI |
-| **[Chege-Photos-WebApp](https://github.com/niccher/Chege-Photos-WebApp)** | Core Web UI, Admin, Auth & Mobile Sync | PHP 8.3 / CodeIgniter 4 |
-| **[Chege-Photos-Android](https://github.com/niccher/Chege-Photos-Android)** | Native Mobile Companion Client | Kotlin / Jetpack Compose |
+| Component | Responsibility | Repository URL | Documentation |
+|---|---|---|---|
+| **Web App** | CodeIgniter 4 Web UI, Auth & Sync Gateway | [GitHub Repo](https://github.com/niccher/Chege-Photos-WebApp) | [docs/](https://github.com/niccher/Chege-Photos-WebApp/tree/main/docs) |
+| **ML Microservice** | FastAPI, InsightFace, YOLO, CLIP & Qdrant | [GitHub Repo](https://github.com/niccher/Chege-Photos-ML) | [docs/](https://github.com/niccher/Chege-Photos-ML/tree/main/docs) |
+| **Android App** | Jetpack Compose Native Mobile Client | [GitHub Repo](https://github.com/niccher/Chege-Photos-Android) | [docs/](https://github.com/niccher/Chege-Photos-Android/tree/main/docs) |
 
 ---
 

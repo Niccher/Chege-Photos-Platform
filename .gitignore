@@ -1,59 +1,37 @@
-# Python caches & bytecode
-__pycache__/
-*.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-.ruff_cache/
-.mypy_cache/
-.coverage
-htmlcov/
-
-# Environment files
+# Environments
 .env
 .env.*
 !.env.example
 
-# Root models & weights (prefixed with / to protect app/models/)
-/models/
-/insightface_models/
-huggingface/
-.huggingface/
-.cache/
-
-# Large model weight binaries
-*.pt
-*.pth
-*.onnx
-*.safetensors
-*.bin
-*.engine
-*.tflite
-
-# Databases & Vector DB storage
-.qdrant_storage/
-
-# Virtual Environments
-venv/
-.venv/
-env/
-ENV/
-
-# Python Packaging & Distribution
-*.egg-info/
-/wheels/
-
-# Logs
-*.log
-
-# Agent and AI assistant configurations & skills
-.agents/
-
-# IDE, OS, and Temporary files
+# IDEs
 .idea/
 .vscode/
 *.swp
 *.swo
-*~
+
+# Dependencies
+vendor/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Build
+build/
+dist/
+*.apk
+*.aab
+*.jar
+*.war
+
+# Logs and DB
+logs/
+*.log
+*.sqlite
+*.sqlite3
+
+# OS
 .DS_Store
 Thumbs.db

@@ -1,24 +1,27 @@
-.git
-.idea
-.vscode
+# Environments
 .env
 .env.*
+
+# IDEs
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Dependencies
+vendor/
+node_modules/
 __pycache__/
 *.pyc
-*.pyo
-*.pyd
-.pytest_cache/
-*.egg-info/
-venv/
 .venv/
+venv/
 env/
-ENV/
-models/
-.qdrant_storage/
-Dockerfile
-docker-compose.yml
-README.md
-LICENSE
-huggingface/
-.huggingface/
-.cache/
+
+# Build
+build/
+dist/
+
+# OS
+.DS_Store
