@@ -124,6 +124,9 @@ class Settings(BaseSettings):
 
         return None
 
+    # ── Redis (Job Queue & Cache) ──────────────────────────────
+    redis_url: str = "redis://redis:6379/0"
+
     # ── Qdrant ──────────────────────────────────────────────────
     qdrant_host: str = "qdrant"
     qdrant_port: int = 6333

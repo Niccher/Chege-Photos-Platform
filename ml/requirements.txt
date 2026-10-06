@@ -18,3 +18,4 @@ transformers
 pytesseract==0.3.13
 opennsfw2
 nudenet
+redis>=5.0.0

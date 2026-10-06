@@ -1,23 +1,24 @@
 # Chege Photos Platform
 
-Unified backend platform for self-hosted personal photo and video management featuring automated face clustering (InsightFace ArcFace), object tagging (YOLOv8), semantic text-to-image search (CLIP), Qdrant vector indexing, Google Cloud Storage hydration, and companion Android synchronization.
+Unified backend platform for self-hosted personal photo and video management featuring automated face clustering (InsightFace ArcFace), object tagging (YOLOv8), semantic text-to-image search (CLIP), Redis caching and durable queueing, Qdrant vector indexing, Google Cloud Storage hydration, and companion Android synchronization.
 
-**Stack**: PHP 8.3 / CodeIgniter 4, Python 3.12 / FastAPI, Qdrant Vector DB, MySQL 8.4, Docker Compose.  
+**Stack**: PHP 8.3 / CodeIgniter 4, Python 3.12 / FastAPI, Redis 7, Qdrant Vector DB, MySQL 8.4, Docker Compose.  
 **If you only need to run the system, this page is enough.** Software engineers: [docs/README.md](docs/README.md).
 
 ---
 
-## What “Running” Looks Like
+## What “Running” Looks Like (Standard Production Ports)
 
-| Service | URL / Endpoint | Port (Host) | Purpose / Default Credential |
+| Service | URL / Endpoint | Standard Port | Purpose / Default Credential |
 |---|---|---|---|
-| **Web Application** | [http://localhost:9005](http://localhost:9005) | `9005` | Web UI & Admin console (`admin@example.com` / `admin_password`) |
-| **ML Microservice** | [http://localhost:9051/docs](http://localhost:9051/docs) | `9051` | FastAPI vision API, Swagger `/docs` |
-| **Qdrant Vector DB**| [http://localhost:9052/dashboard](http://localhost:9052/dashboard) | `9052` / `9053` | Vector search engine (HTTP: 9052, gRPC: 9053) |
-| **MySQL 8.4** | `localhost:9306` | `9306` | Relational database (`db_chege_photos` / `root_password`) |
-| **Web Health Check**| `GET http://localhost:9005/api/v1/health` | `9005` | WebApp JSON status check |
-| **ML Health Check** | `GET http://localhost:9051/health` | `9051` | ML service JSON status check |
-| **Android Client**  | Companion APK | — | Connects to WebApp at `http://10.0.2.2:9005` (emulator) or LAN IP |
+| **Web Application** | [http://localhost](http://localhost) | `80` | Web UI & Admin console (`admin@example.com` / `admin_password`) |
+| **ML Microservice** | [http://localhost:8000/docs](http://localhost:8000/docs) | `8000` | FastAPI vision API, Swagger `/docs` |
+| **Redis Cache & Queue** | `localhost:6379` | `6379` | In-memory cache & durable background job broker |
+| **Qdrant Vector DB**| [http://localhost:6333/dashboard](http://localhost:6333/dashboard) | `6333` / `6334` | Vector search engine (HTTP: 6333, gRPC: 6334) |
+| **MySQL 8.4** | `localhost:3306` | `3306` | Relational database (`db_chege_photos` / `root_password`) |
+| **Web Health Check**| `GET http://localhost/api/v1/health` | `80` | WebApp JSON status check |
+| **ML Health Check** | `GET http://localhost:8000/health` | `8000` | ML service JSON status check |
+| **Android Client**  | Companion APK | — | Connects to WebApp at `http://10.0.2.2` (emulator) or host LAN IP |
 
 ---
 
@@ -26,36 +27,40 @@ Unified backend platform for self-hosted personal photo and video management fea
 ### Docker Compose (Recommended)
 * Docker Engine 24.0+ & Docker Compose v2 (or Docker Desktop)
 * Git
-* 4 GB available RAM (for combined PHP runtime and ML PyTorch/ONNX models)
+* 4 GB available RAM (for combined PHP runtime, Redis, and ML PyTorch/ONNX models)
 
 ---
 
 ## Setup and Run
 
-From a fresh terminal:
+### Option A — One-Click Automated Deployment (Recommended)
+
+From the repository root:
 
 ```bash
-# 1. Clone repository
-git clone https://github.com/Niccher/Chege-Photos-Platform.git
-cd "Chege Photos Platform"
-
-# 2. Copy environment configuration
-cp .env.example .env
-
-# 3. Launch full platform stack in background
-docker compose up --build -d
-
-# 4. Verify running services
-docker compose ps
-
-# 5. Open browser at http://localhost:9005 and log in with default credentials.
-
-# 6. To stop containers when finished:
-docker compose stop
+bash scripts/deploy.sh
 ```
 
 > [!NOTE]
-> On first boot, the platform automatically initializes MySQL, runs database migrations, seeds the default superuser, preloads InsightFace/YOLO ML model weights, and binds the shared internal network `chege-network`.
+> `deploy.sh` automatically performs pre-flight system diagnostics, detects your LAN IP, initializes `.env`, handles container lifecycle, probes service health sequentially, runs database migrations, and enforces file permissions.
+
+### Option B — Manual Docker Compose
+
+```bash
+# 1. Copy environment configuration
+cp .env.example .env
+
+# 2. Launch full platform stack in background
+docker compose up --build -d
+
+# 3. Verify running services
+docker compose ps
+
+# 4. Open browser at http://localhost and log in with default credentials.
+
+# 5. To stop containers when finished:
+docker compose stop
+```
 
 ---
 
@@ -63,26 +68,16 @@ docker compose stop
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `WEB_PORT` | `9005` | Host published port for Web application. |
-| `ML_PORT` | `9051` | Host published port for FastAPI ML microservice. |
-| `DB_PORT` | `9306` | Host published port for MySQL 8.4 database. |
-| `QDRANT_HTTP_PORT` | `9052` | Host published port for Qdrant HTTP REST API. |
+| `WEB_PORT` | `80` | Host published port for Web application. |
+| `ML_PORT` | `8000` | Host published port for FastAPI ML microservice. |
+| `REDIS_PORT` | `6379` | Host published port for Redis in-memory broker. |
+| `DB_PORT` | `3306` | Host published port for MySQL 8.4 database. |
+| `QDRANT_HTTP_PORT` | `6333` | Host published port for Qdrant HTTP REST API. |
 | `DB_ROOT_PASSWORD` | `root_password` | MySQL root database password. |
 | `ML_API_KEY` | `my_super_secret_shared_token_key_123!` | Shared secret header (`X-API-KEY`) between Web and ML. |
 | `GCP_BUCKET` | *None* | Google Cloud Storage bucket for persistent offsite media backup. |
 
 Full list of operational environment variables: [docs/user/configuration.md](docs/user/configuration.md).
-
----
-
-## Troubleshooting
-
-* **Port 9005 already in use**: Change `WEB_PORT` in `.env` or `docker-compose.yml`.
-* **MySQL not ready yet**: Initial database initialization takes ~15–30 seconds. Run `docker compose logs -f mysql`.
-* **ML model download timeout**: First-time build downloads model weights. Models are cached in persistent Docker volume `insightface_models`.
-* **Android emulator cannot connect**: Use `http://10.0.2.2:9005` as the server URL instead of `localhost`.
-
-Detailed symptoms and step-by-step fixes: [docs/user/troubleshooting.md](docs/user/troubleshooting.md).
 
 ---
 
@@ -112,18 +107,21 @@ Chege Photos is organized into a clean **two-repository arrangement**:
 ```
 [ Android Companion App ]  (Repository: Chege-Photos-App)
          │
-         │ (HTTPS / Bearer Token - port 9005)
+         │ (HTTP / Bearer Token - standard port 80)
          ▼
 ┌────────────────────────────────────────────────────────┐
 │ Chege Photos Platform    (Repository: Chege-Photos-Platform)
 │                                                        │
-│  [ Web / REST Gateway ] (Port 9005) ───► [ MySQL 8.4 ] │
-│              │                              ▲ (Port 9306)
-│              ▼                              │
-│  [ ML Microservice ] (Port 9051) ───────────┤
-│              │                                         │
-│              ▼                                         │
-│  [ Qdrant Vector DB ] (Port 9052)                      │
+│  [ Web / REST Gateway ] (Port 80) ────► [ MySQL 8.4 ]  │
+│         │         │                     ▲ (Port 3306)  │
+│         │         ▼                     │              │
+│         │    [ Redis Agent ] (Port 6379)│              │
+│         │         ▲                     │              │
+│         ▼         │                     │              │
+│  [ ML Microservice ] (Port 8000) ───────┤              │
+│         │                                              │
+│         ▼                                              │
+│  [ Qdrant Vector DB ] (Port 6333)                      │
 └────────────────────────────────────────────────────────┘
 ```
 

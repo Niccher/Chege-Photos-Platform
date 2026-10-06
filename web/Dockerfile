@@ -14,7 +14,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         ffmpeg \
         libheif-examples \
     && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) intl mysqli pdo_mysql zip gd exif
+    && docker-php-ext-install -j$(nproc) intl mysqli pdo_mysql zip gd exif \
+    && pecl install redis && docker-php-ext-enable redis
 
 # Enable Apache rewrite module
 RUN a2enmod rewrite headers

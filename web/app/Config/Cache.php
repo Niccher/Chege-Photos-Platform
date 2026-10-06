@@ -21,7 +21,7 @@ class Cache extends BaseConfig
      * The name of the preferred handler that should be used. If for some reason
      * it is not available, the $backupHandler will be used in its place.
      */
-    public string $handler = 'file';
+    public string $handler = 'redis';
 
     /**
      * --------------------------------------------------------------------------
@@ -32,7 +32,7 @@ class Cache extends BaseConfig
      * unreachable. Often, 'file' is used here since the filesystem is
      * always available, though that's not always practical for the app.
      */
-    public string $backupHandler = 'dummy';
+    public string $backupHandler = 'file';
 
     /**
      * --------------------------------------------------------------------------
@@ -114,8 +114,24 @@ class Cache extends BaseConfig
      *
      * @var array{host?: string, password?: string|null, port?: int, timeout?: int, database?: int}
      */
+
+    public function __construct()
+    {
+        parent::__construct();
+
+        if ($host = env('REDIS_HOST') ?: getenv('REDIS_HOST')) {
+            $this->redis['host'] = $host;
+        }
+        if ($port = env('REDIS_PORT') ?: getenv('REDIS_PORT')) {
+            $this->redis['port'] = (int) $port;
+        }
+
+        if (! extension_loaded('redis')) {
+            $this->handler = 'file';
+        }
+    }
     public array $redis = [
-        'host'     => '127.0.0.1',
+        'host'     => 'redis',
         'password' => null,
         'port'     => 6379,
         'timeout'  => 0,
