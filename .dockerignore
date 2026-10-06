@@ -1,29 +1,27 @@
-.git
-.gitignore
-.idea
-.vscode
+# Environments
 .env
-.env.testing
-.env.docker
-node_modules
-vendor
-writable/logs/*
-writable/cache/*
-writable/session/*
-writable/debugbar/*
-writable/uploads/*
-writable/exports/*
-writable/backups/*
-Dockerfile
-docker-compose.yml
-phpunit.xml.dist
-tests
-README.md
-LICENSE
-!writable/logs/index.html
-!writable/cache/index.html
-!writable/session/index.html
-!writable/debugbar/index.html
-!writable/uploads/index.html
-*.db
-*.sqlite
+.env.*
+
+# IDEs
+.idea/
+.vscode/
+
+# Git
+.git/
+.gitignore
+
+# Dependencies
+vendor/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+
+# Build
+build/
+dist/
+
+# OS
+.DS_Store

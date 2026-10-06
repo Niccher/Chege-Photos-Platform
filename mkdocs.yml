@@ -1,0 +1,69 @@
+site_name: Chege Photos WebApp Documentation
+site_description: Engineering & User documentation for Chege Photos WebApp (CodeIgniter 4, MySQL 8.4)
+theme:
+  name: material
+  palette:
+    - scheme: default
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - scheme: slate
+      primary: indigo
+      accent: deep purple
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.sections
+    - navigation.expand
+    - content.code.copy
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.highlight:
+      anchor_linenums: true
+  - pymdownx.inlinehilite
+  - tables
+  - toc:
+      permalink: true
+
+nav:
+  - Home: README.md
+  - User Guide:
+      - Setup & Run: user/setup-and-run.md
+      - Configuration: user/configuration.md
+      - Troubleshooting: user/troubleshooting.md
+  - Architecture:
+      - Overview: architecture/overview.md
+      - Communication: architecture/communication.md
+      - Data & Storage: architecture/data-and-storage.md
+      - Deployment: architecture/deployment.md
+      - Threat Model: architecture/threat-model.md
+  - API Reference:
+      - REST Contract: api/contract.md
+  - Services:
+      - CodeIgniter 4: services/codeigniter.md
+  - Engineering:
+      - Local Development: engineering/local-development.md
+      - Making Changes: engineering/making-changes.md
+      - Database Migrations: engineering/database.md
+      - Testing: engineering/testing.md
+      - CI/CD: engineering/ci.md
+      - Contributing: engineering/contributing.md
+      - Troubleshooting: engineering/troubleshooting.md
+      - Security: engineering/security.md
+      - Release Train: engineering/release.md
+  - Runbooks:
+      - Restart & Recovery: runbooks/restart.md
+      - Backup & Restore: runbooks/backup-and-restore.md
+  - Architecture Decision Records:
+      - "0001: Hybrid QR & Numeric Pairing": adr/0001-hybrid-qr-numeric-pairing.md
+      - "0002: Unified Feed Aggregation": adr/0002-unified-feed-aggregation.md

@@ -3,7 +3,7 @@
 Self-hosted personal photo and video management platform featuring automated ML face clustering, multimodal semantic search, Google Cloud Storage hydration, and companion Android synchronization.
 
 **Stack**: PHP 8.3 / CodeIgniter 4, MySQL 8.4, Apache, Docker Compose.  
-**Audience**: If you only need to run or test the system, this page is enough. Software engineers: [docs/README.md](docs/README.md).
+**If you only need to run the system, this page is enough.** Software engineers: [docs/README.md](docs/README.md).
 
 ---
 
@@ -28,8 +28,7 @@ Self-hosted personal photo and video management platform featuring automated ML 
 ### Option B — Bare-Metal
 * PHP 8.2 or 8.3 (`intl`, `mysqli`, `gd`, `zip`, `exif`, `curl`, `mbstring`)
 * MySQL 8.0+ or MariaDB 10.6+
-* Composer 2.x
-* Apache 2.4 (with `mod_rewrite` enabled)
+* Composer 2.x & Apache 2.4 (with `mod_rewrite` enabled)
 
 ---
 
@@ -87,26 +86,22 @@ Detailed symptoms and step-by-step fixes: [docs/user/troubleshooting.md](docs/us
 
 ---
 
-## Engineering Documentation
+## Software Engineers
 
 For architecture, database schemas, API specs, and development workflows, see the **[Engineering Handbook](docs/README.md)**:
 
 * [Architecture Overview & C4 Containers](docs/architecture/overview.md)
 * [Protocols & Inter-Service Communication](docs/architecture/communication.md)
 * [Database Schemas & Storage Hierarchy](docs/architecture/data-and-storage.md)
-* [Production Deployment (Railway & Docker)](docs/architecture/deployment.md)
+* [Threat Model & Security Hardening](docs/architecture/threat-model.md)
 * [REST API Contract](docs/api/contract.md)
-* [CodeIgniter 4 Service Handbook & Spark CLI](docs/services/codeigniter.md)
 * [Local Development Guide](docs/engineering/local-development.md)
-* [Database Migrations & Management](docs/engineering/database.md)
 * [Making Changes & Definition of Done](docs/engineering/making-changes.md)
 * [Testing Guide](docs/engineering/testing.md)
 
 ---
 
 ## Ecosystem & Multi-Repo Architecture
-
-Chege Photos is composed of three decoupled repositories that work together:
 
 ```
 [ Android Companion App ]
@@ -120,37 +115,13 @@ Chege Photos is composed of three decoupled repositories that work together:
 [ ML Chege Photos ] (Port 9051) ─────── talks to ───► [ Qdrant Vector DB ] (Port 9052)
 ```
 
-### How the Repositories Interact
-1. **Android App** talks **exclusively to WebApp**:
-   - The Android client never communicates with the ML service directly.
-   - It only needs the WebApp address (`http://10.0.2.2:9005` in emulator, or host LAN IP e.g. `http://192.168.1.50:9005` on physical devices).
-2. **WebApp delegates AI to ML Service**:
-   - When photos are uploaded (from WebApp UI or Android), WebApp dispatches asynchronous scan jobs to the ML service via `ML_URL` (`http://localhost:9051` or `http://ml-chege-photos:8000`).
-   - The ML service detects faces (InsightFace), tags objects (YOLOv8), and generates vector embeddings (CLIP) stored in Qdrant.
-   - When Android or WebApp searches or explores faces, the WebApp queries the ML service/Qdrant transparently.
+### Sibling Ecosystem Repositories
 
-### Startup Order for Complete Stack
-1. **Start WebApp First** (spins up MySQL and creates `hosts-shared-network`):
-   ```bash
-   cd "Chege Photos WebApp"
-   docker compose up -d
-   ```
-2. **Start ML Service Second** (joins `hosts-shared-network` and spins up Qdrant):
-   ```bash
-   cd "ML Chege Photos"
-   docker compose up -d
-   ```
-3. **Run Android Companion** (build & run in Android Studio; scan QR code in WebApp Settings to pair).
-
----
-
-## Sibling Repositories
-
-| Repository | Responsibility | Tech Stack |
-|---|---|---|
-| **[Chege-Photos-WebApp](https://github.com/niccher/Chege-Photos-WebApp)** | Core Web UI, Admin, Auth & Mobile Sync | PHP 8.3 / CodeIgniter 4 |
-| **[Chege-Photos-ML](https://github.com/niccher/Chege-Photos-ML)** | Face Detection, YOLOv8, CLIP & Qdrant | Python 3.12 / FastAPI |
-| **[Chege-Photos-Android](https://github.com/niccher/Chege-Photos-Android)** | Native Mobile Companion Client | Kotlin / Jetpack Compose |
+| Component | Responsibility | Repository URL | Documentation |
+|---|---|---|---|
+| **Web App** | CodeIgniter 4 Web UI, Auth & Sync Gateway | [GitHub Repo](https://github.com/niccher/Chege-Photos-WebApp) | [docs/](https://github.com/niccher/Chege-Photos-WebApp/tree/main/docs) |
+| **ML Microservice** | FastAPI, InsightFace, YOLO, CLIP & Qdrant | [GitHub Repo](https://github.com/niccher/Chege-Photos-ML) | [docs/](https://github.com/niccher/Chege-Photos-ML/tree/main/docs) |
+| **Android App** | Jetpack Compose Native Mobile Client | [GitHub Repo](https://github.com/niccher/Chege-Photos-Android) | [docs/](https://github.com/niccher/Chege-Photos-Android/tree/main/docs) |
 
 ---
 

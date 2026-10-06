@@ -1,0 +1,219 @@
+openapi: 3.0.3
+info:
+  title: Chege Photos WebApp REST API
+  description: Official REST API for mobile clients, web administration, and companion synchronizers.
+  version: 1.0.0
+servers:
+  - url: http://localhost:9005/api/v1
+    description: Local Docker development
+  - url: http://10.0.2.2:9005/api/v1
+    description: Android Emulator loopback
+paths:
+  /health:
+    get:
+      summary: Service health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  timestamp:
+                    type: string
+                    example: "2026-09-06T20:00:00Z"
+
+  /login:
+    post:
+      summary: User credentials authentication
+      operationId: postLogin
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  example: admin@example.com
+                password:
+                  type: string
+                  format: password
+                  example: admin_password
+      responses:
+        '200':
+          description: Login successful
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  token:
+                    type: string
+                  user:
+                    type: object
+
+  /auth-with-token:
+    post:
+      summary: Mobile device pairing exchange
+      operationId: authWithToken
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [pairing_code, device_name, device_fingerprint]
+              properties:
+                pairing_code:
+                  type: string
+                  example: "839201"
+                device_name:
+                  type: string
+                  example: "Pixel 8 Pro"
+                device_fingerprint:
+                  type: string
+                  example: "a8f9c7e12d4b..."
+      responses:
+        '200':
+          description: Pairing successful, persistent token issued
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  access_token:
+                    type: string
+                  expires_in:
+                    type: integer
+
+  /photos:
+    get:
+      summary: List user photos
+      operationId: listPhotos
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: page
+          in: query
+          schema:
+            type: integer
+            default: 1
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            default: 50
+      responses:
+        '200':
+          description: Paginated photo collection
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Photo'
+                  total:
+                    type: integer
+
+  /upload:
+    post:
+      summary: Stream or multipart photo upload
+      operationId: uploadPhoto
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                file_hash:
+                  type: string
+                  example: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      responses:
+        '201':
+          description: Media uploaded successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Photo'
+
+  /photos/check-hashes:
+    post:
+      summary: Batch pre-flight hash verification
+      operationId: checkHashes
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hashes]
+              properties:
+                hashes:
+                  type: array
+                  items:
+                    type: string
+      responses:
+        '200':
+          description: List of hashes already existing on server
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  existing_hashes:
+                    type: array
+                    items:
+                      type: string
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: PAT
+  schemas:
+    Photo:
+      type: object
+      properties:
+        id:
+          type: integer
+        filename:
+          type: string
+        path:
+          type: string
+        thumbnail_path:
+          type: string
+        size:
+          type: integer
+        mime_type:
+          type: string
+        file_hash:
+          type: string
+        taken_at:
+          type: string
+          format: date-time
+        is_favorite:
+          type: boolean
+        is_archived:
+          type: boolean
