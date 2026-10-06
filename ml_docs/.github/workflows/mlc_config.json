@@ -1,0 +1,9 @@
+{
+  "ignorePatterns": [
+    { "pattern": "^http://10\\.0\\.2\\.2" },
+    { "pattern": "^http://localhost" },
+    { "pattern": "^https://your-domain\\.up\\.railway\\.app" }
+  ],
+  "timeout": "10s",
+  "retryOn429": true
+}

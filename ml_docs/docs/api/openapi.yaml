@@ -1,0 +1,124 @@
+openapi: 3.0.3
+info:
+  title: ML Chege Photos API
+  description: Internal FastAPI microservice for face detection, ArcFace embedding, HDBSCAN clustering, YOLOv8 tagging, and CLIP semantic search.
+  version: 0.2.0
+servers:
+  - url: http://localhost:8000
+    description: Internal container port
+  - url: http://localhost:9051
+    description: Host mapped port
+paths:
+  /health:
+    get:
+      summary: Liveness health check
+      operationId: getHealth
+      responses:
+        '200':
+          description: Service is alive and healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status:
+                    type: string
+                    example: ok
+                  service:
+                    type: string
+                    example: ML Chege Photos
+
+  /metrics:
+    get:
+      summary: Prometheus runtime metrics
+      operationId: getMetrics
+      responses:
+        '200':
+          description: Prometheus formatted metric text
+          content:
+            text/plain:
+              schema:
+                type: string
+
+  /api/v1/faces/detect:
+    post:
+      summary: Detect faces and extract ArcFace embeddings
+      operationId: detectFaces
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [photo_path, user_id]
+              properties:
+                photo_path:
+                  type: string
+                  example: "users/1/2026/09/sample.jpg"
+                user_id:
+                  type: integer
+                  example: 1
+      responses:
+        '200':
+          description: Detected face bounding boxes and embeddings
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  faces_detected:
+                    type: integer
+                  faces:
+                    type: array
+                    items:
+                      type: object
+
+  /api/v1/search/clip:
+    post:
+      summary: Natural language multimodal semantic search
+      operationId: clipSearch
+      security:
+        - ApiKeyAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [query, user_id]
+              properties:
+                query:
+                  type: string
+                  example: "sunset on the beach with dogs"
+                user_id:
+                  type: integer
+                  example: 1
+                limit:
+                  type: integer
+                  default: 30
+      responses:
+        '200':
+          description: Matched photo IDs ranked by cosine similarity
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        photo_id:
+                          type: integer
+                        score:
+                          type: number
+
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-KEY

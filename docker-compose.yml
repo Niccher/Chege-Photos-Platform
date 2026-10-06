@@ -1,21 +1,27 @@
 version: '3.8'
 
-# Standalone Docker Compose for Chege Photos WebApp
-# Usage: docker compose up --build -d
-# This will spin up the webapp and MySQL.
+# Chege Photos Platform — Unified Docker Compose Orchestrator
+# Usage:
+#   docker compose up --build -d
+#
+# Services:
+#   - mysql:       MySQL 8.4 on port 9306 (internal 3306)
+#   - web:         CodeIgniter 4 / Apache on port 9005 (internal 80)
+#   - ml:          FastAPI ML Microservice on port 9051 (internal 8000)
+#   - qdrant:      Qdrant Vector Engine on ports 9052 (HTTP) & 9053 (gRPC)
 
 services:
   mysql:
     image: mysql:8.4
-    container_name: shared-mysql
+    container_name: chege-mysql
     ports:
-      - "9306:3306"
+      - "${DB_PORT:-9306}:3306"
     environment:
-      MYSQL_ROOT_PASSWORD: root_password
-      MYSQL_DATABASE: db_chege_photos
+      MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
+      MYSQL_DATABASE: ${DB_NAME:-db_chege_photos}
     command: --sql-mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-proot_password"]
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root_password}"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -23,27 +29,100 @@ services:
     volumes:
       - mysql-data:/var/lib/mysql
     networks:
-      - shared-network
+      chege-network:
+        aliases:
+          - mysql
+          - shared-mysql
+    restart: unless-stopped
 
-  chege-photos:
+  web:
     build:
-      context: .
+      context: ./web
       dockerfile: Dockerfile
-    image: chege-photos-webapp:latest
-    container_name: chege-photos-webapp
+    image: chege-photos-web:latest
+    container_name: chege-photos-web
     ports:
-      - "9005:80"
+      - "${WEB_PORT:-9005}:80"
+    environment:
+      CI_ENVIRONMENT: ${CI_ENVIRONMENT:-development}
+      ML_URL: ${ML_URL:-http://ml:8000}
+      ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
     volumes:
-      - .:/var/www/html
+      - ./web:/var/www/html
     depends_on:
       mysql:
         condition: service_healthy
     networks:
-      - shared-network
+      chege-network:
+        aliases:
+          - web
+          - chege-photos-webapp
+    restart: unless-stopped
+
+  ml:
+    build:
+      context: ./ml
+      dockerfile: Dockerfile
+    image: chege-photos-ml:latest
+    container_name: chege-photos-ml
+    ports:
+      - "${ML_PORT:-9051}:8000"
+    environment:
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
+      DB_NAME: ${DB_NAME:-db_chege_photos}
+      QDRANT_HOST: qdrant
+      QDRANT_PORT: 6333
+      QDRANT_COLLECTION: face_embeddings
+      FACE_MODEL_PACK: buffalo_l
+      FACE_DET_THRESH: 0.5
+      INCLUDE_SENSITIVE_ATTRIBUTES: "false"
+      HDBSCAN_MIN_CLUSTER_SIZE: 2
+      HDBSCAN_MIN_SAMPLES: 1
+      CLUSTER_METRIC: cosine
+      SCAN_STALE_TIMEOUT_SEC: 300
+      HOST: 0.0.0.0
+      PORT: 8000
+      LOG_LEVEL: info
+      ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
+    volumes:
+      - ./web/public/uploads:/app/uploads:ro
+      - insightface_models:/app/models/insightface_models
+      - ./ml/app:/app/app
+    depends_on:
+      mysql:
+        condition: service_healthy
+      qdrant:
+        condition: service_started
+    networks:
+      chege-network:
+        aliases:
+          - ml
+          - ml-chege-photos
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:latest
+    container_name: chege-qdrant
+    ports:
+      - "${QDRANT_HTTP_PORT:-9052}:6333"
+      - "${QDRANT_GRPC_PORT:-9053}:6334"
+    volumes:
+      - qdrant_data:/qdrant/storage
+    networks:
+      chege-network:
+        aliases:
+          - qdrant
+          - ml-qdrant
+    restart: unless-stopped
 
 volumes:
   mysql-data:
+  qdrant_data:
+  insightface_models:
 
 networks:
-  shared-network:
-    name: hosts-shared-network
+  chege-network:
+    name: chege-network
