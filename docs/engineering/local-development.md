@@ -50,3 +50,39 @@ php spark serve --port 8080
 ```
 
 Access the application at [http://localhost:8080](http://localhost:8080).
+
+---
+
+## 3. ML Microservice (FastAPI & Vision Models)
+
+How to run and debug the Python FastAPI microservice natively on your workstation:
+
+### System Dependencies
+* **Python**: 3.12+
+* **Tesseract OCR**: `sudo apt install tesseract-ocr tesseract-ocr-eng` (optional, for OCR pipelines)
+* **Graphics Libraries**: `sudo apt install libgl1 libglib2.0-0` (for OpenCV runtime)
+
+### Setup & Execution
+```bash
+# 1. Navigate to ML service directory
+cd ml
+
+# 2. Create and activate a Python virtual environment
+python3 -m venv .venv
+source .venv/bin/activate
+
+# 3. Install dependencies from PyPI
+pip install -r requirements.txt
+
+# 4. Pre-download neural network weights (InsightFace, YOLOv8, OpenNSFW, CLIP)
+python scripts/download_all_models.py
+
+# 5. Configure environment variables
+cp .env.example .env
+
+# 6. Start FastAPI development server with auto-reload
+uvicorn app.main:app --reload --host 0.0.0.0 --port 8000
+```
+
+Access the interactive OpenAPI Swagger UI at [http://localhost:8000/docs](http://localhost:8000/docs).
+

@@ -12,6 +12,7 @@ Because Chege Photos is distributed across three repositories, services must mai
 |---|---|---|---|---|
 | **v1.0.x** | `/api/v1` | Migrations 001–015 | v1.0.0+ (Build 1) | v0.1.0+ |
 | **v1.1.x** | `/api/v1` | Migrations 016–024 | v1.1.0+ (Build 5) | v0.2.0+ (CLIP + YOLO) |
+| **v1.2.x** | `/api/v1` | Migrations 016–024 | v1.1.0+ (Build 5) | v0.2.0+ (Docker BuildKit caching & context slimming) |
 
 ---
 

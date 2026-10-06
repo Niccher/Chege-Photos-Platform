@@ -21,6 +21,7 @@
 
 <div class="section-sm">
     <div class="accordion accordion-pub" id="faqAccordion">
+        <!-- 1. What is Chege Photos -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button" type="button" data-bs-toggle="collapse" data-bs-target="#faq1">
@@ -29,11 +30,12 @@
             </h2>
             <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Chege Photos is a <strong>self-hosted, open-source</strong> photo management platform. It consists of a <strong>web app</strong> (PHP/CI4 + MySQL), an <strong>Android companion app</strong> (Kotlin), and an <strong>ML backend</strong> (Python/FastAPI with Insightface and Qdrant). All components run on your own infrastructure — your data never leaves your servers.
+                    Chege Photos is a <strong>self-hosted, open-source</strong> photo management platform engineered for complete data privacy and local multimodal AI intelligence. It consists of the <strong>Chege-Photos-Platform monorepo</strong> (PHP 8.3 / CodeIgniter 4 web application + MySQL 8.4 + Python 3.12 / FastAPI vision service + Qdrant vector database + Redis 7) and the native <strong>Chege Photos Android companion app</strong> (Kotlin + Jetpack Compose). All neural models (CLIP semantic search, InsightFace clustering, YOLOv8 object tagging, Tesseract OCR) execute entirely on your own hardware — zero cloud subscriptions, zero telemetry, and zero third-party API dependencies.
                 </div>
             </div>
         </div>
 
+        <!-- 2. Is it free -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq2">
@@ -42,133 +44,184 @@
             </h2>
             <div id="faq2" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Yes. Chege Photos is open-source and released under the <strong>MIT License</strong> — you can self-host it for free on your own hardware. The only costs are your own infrastructure: server, storage, and optionally a domain name.
+                    Yes. Chege Photos is 100% free and open-source under the <strong>MIT License</strong>. You can run it on your own homelab, local server, or VPS with no user limits, no feature paywalls, and no subscription tiers. Your only costs are your own server hardware and storage.
                 </div>
             </div>
         </div>
 
+        <!-- 3. Where are photos stored -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq3">
-                    Where are my photos stored?
+                    Where are my photos and data stored?
                 </button>
             </h2>
             <div id="faq3" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Your photos are stored <strong>exclusively on your own server</strong>. The web app stores originals and thumbnails on your filesystem, metadata in your MySQL database, and face embeddings in a local Qdrant vector database. <strong>Your data never leaves your infrastructure.</strong>
+                    Your photos, thumbnails, and AI vector embeddings are stored <strong>exclusively on your own hardware</strong>. Media originals are preserved on your local filesystem, relational metadata resides in MySQL, and high-dimensional neural embeddings live in an on-premise Qdrant vector database. <strong>Your photos and biometric vectors never leave your premises.</strong>
                 </div>
             </div>
         </div>
 
+        <!-- 4. Natural Language Search -->
         <div class="accordion-item">
             <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
-                    Does it require an internet connection?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq_clip">
+                    How does natural-language search work without third-party AI APIs?
                 </button>
             </h2>
-            <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div id="faq_clip" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Not necessarily. The web app and ML backend run on your local network or a VPS. You can access them over <strong>LAN</strong> without internet, or over the internet if you expose them securely with a reverse proxy. The Android app connects to your server over your network.
+                    Unlike commercial clouds that send your private photos to third-party APIs (like OpenAI or Google Cloud), Chege Photos runs an embedded <strong>OpenAI CLIP (ViT-B/32)</strong> neural network directly inside your local FastAPI microservice. When photos are uploaded, CLIP computes a 512-dimensional vector capturing semantic concepts, objects, and scenes. When you search for queries like <em>"kids playing soccer on grass"</em> or <em>"sunset over snowy mountains"</em>, the text is vectorized locally and matched against your private Qdrant vector index in milliseconds via HNSW cosine similarity.
                 </div>
             </div>
         </div>
 
+        <!-- 5. Multimodal Vision Pipeline -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq5">
-                    How does face recognition work?
+                    What AI capabilities are included in the Vision Engine?
                 </button>
             </h2>
             <div id="faq5" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    <p>When you upload a photo, the web app sends it to the ML backend over a local API. The pipeline is:</p>
-                    <ol>
-                        <li><strong>Detect</strong>: RetinaFace finds faces in the image</li>
-                        <li><strong>Embed</strong>: Insightface ArcFace extracts a 512-dimensional embedding vector per face</li>
-                        <li><strong>Cluster</strong>: HDBSCAN groups similar faces across your library</li>
-                        <li><strong>Search</strong>: Qdrant enables fast similarity search — query by face to find all photos containing that person</li>
+                    <p>The vision backend executes a unified multimodal inference pipeline whenever media is uploaded:</p>
+                    <ol class="mb-0">
+                        <li><strong>Face Detection &amp; Alignment</strong>: RetinaFace locates faces and key facial landmarks.</li>
+                        <li><strong>Facial Embeddings</strong>: ArcFace extracts normalized 512-d biometric vectors per face.</li>
+                        <li><strong>Identity Clustering</strong>: HDBSCAN automatically groups matching faces into recognizable people across your timeline.</li>
+                        <li><strong>Semantic Search</strong>: CLIP ViT-B/32 maps photo content into a multi-modal text/image vector space.</li>
+                        <li><strong>Object &amp; Tag Detection</strong>: Ultralytics YOLOv8 tags photos across 80+ visual categories.</li>
+                        <li><strong>OCR Text Extraction</strong>: Tesseract OCR extracts text from receipts, documents, and signs for instant keyword retrieval.</li>
+                        <li><strong>Vector Indexing</strong>: Qdrant stores high-dimensional embeddings with sub-second HNSW indexing.</li>
                     </ol>
                 </div>
             </div>
         </div>
 
+        <!-- 6. GPU Requirements -->
         <div class="accordion-item">
             <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq6">
-                    Can I use it without the ML backend?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq_gpu">
+                    Do I need an expensive dedicated GPU?
                 </button>
             </h2>
-            <div id="faq6" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div id="faq_gpu" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    <strong>Yes.</strong> Chege Photos works perfectly as a photo gallery and management platform without the ML backend. Face recognition is optional — you can enable it at any time by deploying the ML service and configuring it in the web app settings.
+                    <strong>No.</strong> The entire ML stack (ONNX Runtime, InsightFace, CLIP, YOLOv8) is optimized for multithreaded x86_64 CPU execution out of the box. A standard 4-core modern CPU processes photos smoothly in background queues. If you have an NVIDIA GPU, you can optionally pass through CUDA acceleration via Docker Compose for ultra-fast batch imports.
                 </div>
             </div>
         </div>
 
+        <!-- 7. Hardware Requirements -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq7">
-                    What hardware do I need?
+                    What hardware specifications are recommended?
                 </button>
             </h2>
             <div id="faq7" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
                     <ul class="mb-0">
-                        <li><strong>Minimum</strong>: 2 CPU cores, 4 GB RAM, 20 GB+ storage</li>
-                        <li><strong>Recommended (with ML)</strong>: 4+ CPU cores, 8 GB RAM, GPU with CUDA support</li>
-                        <li><strong>Software</strong>: Docker and Docker Compose</li>
-                        <li>Storage needs scale with your photo library — plan accordingly.</li>
+                        <li><strong>Minimum</strong>: 2 CPU cores, 4 GB RAM, 20 GB+ disk space (handles basic photo gallery and lightweight tagging).</li>
+                        <li><strong>Recommended (Full Multimodal AI)</strong>: 4+ CPU cores, 8 GB RAM, SSD/NVMe storage for database and vector indexes.</li>
+                        <li><strong>Optional Acceleration</strong>: NVIDIA GPU with CUDA 12+ for instant processing of massive library imports.</li>
+                        <li><strong>Operating System</strong>: Linux (Ubuntu, Debian, Fedora, Arch) or any Docker-compatible host.</li>
                     </ul>
                 </div>
             </div>
         </div>
 
+        <!-- 8. Mobile Pairing & Security -->
         <div class="accordion-item">
             <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq8">
-                    How do I install Chege Photos?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq_mobile_pair">
+                    How does the Android app connect securely without typing passwords?
                 </button>
             </h2>
-            <div id="faq8" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div id="faq_mobile_pair" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Clone the three repositories (web app, Android app, ML backend), configure environment variables, create a shared Docker network, and deploy with Docker Compose. See our <a href="<?= base_url('setup') ?>">Setup Guide</a> for a complete step-by-step walkthrough.
+                    Chege Photos features a <strong>hybrid QR &amp; 6-digit numeric PIN pairing</strong> system. In your WebApp settings, generate a pairing session which displays both a dynamic QR code and an expiring 6-digit numeric PIN. On your Android phone, scan the QR code or enter the 6 digits — the server securely validates the device fingerprint and issues an encrypted API token. No passwords or lengthy server URLs ever need to be typed on your phone.
                 </div>
             </div>
         </div>
 
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq_cron">
-                    How do I manage background tasks and cron jobs?
-                </button>
-            </h2>
-            <div id="faq_cron" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body">
-                    The platform runs a built-in container cron service that triggers a master CodeIgniter Spark task scheduler (<code>cron:run</code>) every minute. Administrative superusers can modify the frequencies of individual jobs (Trash Purge, ML Face Clustering, Temp Upload Cleanup) directly from the Web UI under <strong>Admin Console &rarr; System Crons</strong>, and also view a detailed run log history database.
-                </div>
-            </div>
-        </div>
-
+        <!-- 9. Android Companion Features -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq9">
-                    How do I connect the Android app?
+                    What makes the Android app different from a generic mobile web wrapper?
                 </button>
             </h2>
             <div id="faq9" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    <p>Install the Android app from the GitHub releases. To connect it to your server:</p>
-                    <ol>
-                        <li>Sign into your web app account</li>
-                        <li>Go to Settings → API Tokens and generate a new token</li>
-                        <li>Open the Android app and enter your server URL</li>
-                        <li>Scan the QR code from Settings to auto-configure, or manually enter the token</li>
-                    </ol>
-                    <p class="mb-0">The app uses token-based authentication and syncs via REST API over your network.</p>
+                    The Android app is a 100% native client built with <strong>Kotlin and Jetpack Compose</strong>. It integrates directly with Android's MediaStore for background camera backup, includes biometric fingerprint and face lock, features zero-copy streaming uploads, and offers a specialized <code>PersonPhotoPager</code> that renders real-time face bounding box overlays over photos.
                 </div>
             </div>
         </div>
 
+        <!-- 10. Deduplication -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq_dedup">
+                    What happens if I upload duplicate photos?
+                </button>
+            </h2>
+            <div id="faq_dedup" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    Chege Photos computes cryptographic <strong>SHA-256 hashes</strong> before saving files. If a photo with the exact same content hash already exists in your library, the system prevents duplicate disk usage and skips redundant AI embedding generation, keeping your storage clean and efficient.
+                </div>
+            </div>
+        </div>
+
+        <!-- 11. Offsite Backups & GCS -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq12">
+                    Can I back up my photos offsite or to cloud storage?
+                </button>
+            </h2>
+            <div id="faq12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    Yes. In addition to standard filesystem tools (like <code>restic</code>, <code>rsync</code>, or <code>rclone</code>), Chege Photos supports optional <strong>Google Cloud Storage (GCS)</strong> disaster-recovery hydration. You can configure encrypted bucket replication for offsite disaster recovery while keeping all active serving and AI inference 100% local.
+                </div>
+            </div>
+        </div>
+
+        <!-- 12. Installation & Quick Start -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq8">
+                    How do I install and deploy Chege Photos?
+                </button>
+            </h2>
+            <div id="faq8" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    Clone the unified monorepo and run the one-click deployment script:
+                    <pre class="bg-dark text-light p-3 rounded-3 mt-2 mb-2 font-monospace small"><code>git clone https://github.com/niccher/Chege-Photos-Platform.git
+cd Chege-Photos-Platform
+bash scripts/deploy.sh</code></pre>
+                    The deployment script automatically checks prerequisites (Docker, Compose), configures environment secrets, sets standard service ports (<code>web:80</code>, <code>ml:8000</code>, <code>mysql:3306</code>, <code>redis:6379</code>, <code>qdrant:6333</code>), builds containers with layer caching, and runs health probes. See our <a href="<?= base_url('setup') ?>">Setup Guide</a> for full details.
+                </div>
+            </div>
+        </div>
+
+        <!-- 13. Background Crons -->
+        <div class="accordion-item">
+            <h2 class="accordion-header">
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq_cron">
+                    How are background tasks and AI clustering managed?
+                </button>
+            </h2>
+            <div id="faq_cron" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+                <div class="accordion-body">
+                    The platform runs a built-in container scheduler executing CodeIgniter's Spark task runner (<code>cron:run</code>) every minute. Administrative superusers can adjust execution intervals for individual jobs (Trash Purge, ML Face Clustering, Temp Upload Cleanup) directly from the Web UI under <strong>Admin Console &rarr; System Crons</strong>, complete with full execution logs and timing history.
+                </div>
+            </div>
+        </div>
+
+        <!-- 14. Supported Formats -->
         <div class="accordion-item">
             <h2 class="accordion-header">
                 <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq10">
@@ -178,80 +231,24 @@
             <div id="faq10" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
                     <ul class="mb-0">
-                        <li><strong>Images</strong>: JPEG, PNG, WebP, GIF</li>
-                        <li><strong>Videos</strong>: MP4, MOV, WebM</li>
+                        <li><strong>Images</strong>: JPEG, PNG, WebP, GIF, HEIC/HEIF</li>
+                        <li><strong>Videos</strong>: MP4, MOV, WebM, MKV</li>
+                        <li><strong>Metadata</strong>: Full EXIF extraction (camera make, model, ISO, shutter speed, focal length, GPS coordinates).</li>
                     </ul>
                 </div>
             </div>
         </div>
 
+        <!-- 15. Offline / LAN operation -->
         <div class="accordion-item">
             <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq11">
-                    Can I share albums with others?
+                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq4">
+                    Does Chege Photos work without an internet connection?
                 </button>
             </h2>
-            <div id="faq11" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
+            <div id="faq4" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Yes. You can share individual photos with other registered users and generate token-authenticated public share links with optional expiration dates.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq12">
-                    How do I back up my photos?
-                </button>
-            </h2>
-            <div id="faq12" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body">
-                    <p>Since photos are stored on your filesystem, use standard backup tools:</p>
-                    <ul>
-                        <li><strong>Photos</strong>: rsync, restic, or rclone to back up the uploads directory</li>
-                        <li><strong>Database</strong>: <code>mysqldump</code> to dump the MySQL database</li>
-                        <li><strong>Full restore</strong>: restore both the uploads directory and the database dump</li>
-                    </ul>
-                    <p class="mb-0">For Docker deployments, mount volumes to persistent storage and back them up directly.</p>
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq13">
-                    Is there a mobile web version?
-                </button>
-            </h2>
-            <div id="faq13" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body">
-                    Yes, the web app is fully responsive and works on mobile browsers. For the best experience, the native Android app supports offline viewing, background sync, and biometric authentication.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq14">
-                    How do I update Chege Photos?
-                </button>
-            </h2>
-            <div id="faq14" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body">
-                    For <strong>Docker deployments</strong>: pull the latest images and recreate containers. For <strong>bare-metal</strong>: git pull the latest code and run any database migrations. Check the GitHub releases for changelogs and migration instructions.
-                </div>
-            </div>
-        </div>
-
-        <div class="accordion-item">
-            <h2 class="accordion-header">
-                <button class="accordion-button collapsed" type="button" data-bs-toggle="collapse" data-bs-target="#faq15">
-                    Can I import photos from Google Photos?
-                </button>
-            </h2>
-            <div id="faq15" class="accordion-collapse collapse" data-bs-parent="#faqAccordion">
-                <div class="accordion-body">
-                    There is no direct Google Photos import tool yet. You can use <strong>Google Takeout</strong> to export your data, then upload the photos through the web interface or place them directly in the uploads directory on your server.
+                    Yes. The platform operates 100% offline within your local area network (LAN). All web interfaces, vector databases, and AI vision inference services operate locally. You can access your gallery, search by natural language, and sync your Android device completely off-grid.
                 </div>
             </div>
         </div>

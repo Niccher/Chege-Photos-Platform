@@ -96,8 +96,15 @@
             border-radius: 20px;
             padding: 2.5rem;
             width: 100%;
-            max-width: 420px;
+            max-width: 440px;
             box-shadow: 0 25px 50px rgba(0,0,0,0.15);
+        }
+        .auth-container {
+            width: 100%;
+            max-width: 1140px;
+        }
+        .auth-trust-panel {
+            padding: 1.5rem 0;
         }
         .brand-logo { font-size: 2.5rem; color: var(--accent-color); margin-bottom: 0.25rem; }
         .brand-title { font-size: 1.5rem; font-weight: 700; color: var(--text-primary); margin-bottom: 0.25rem; }
@@ -191,7 +198,76 @@
         </div>
     </nav>
 
-    <?= $this->renderSection('content') ?>
+    <main class="auth-container d-flex align-items-center justify-content-center flex-grow-1">
+        <div class="container py-3">
+            <div class="row align-items-center justify-content-center g-4 g-lg-5">
+                <!-- Desktop Showcase Panel -->
+                <div class="col-lg-6 col-xl-6 d-none d-lg-block">
+                    <div class="auth-trust-panel pe-xl-4 text-start">
+                        <div class="d-inline-flex align-items-center gap-2 px-3 py-1 rounded-pill mb-3" style="background: color-mix(in srgb, var(--accent-color) 15%, transparent); border: 1px solid color-mix(in srgb, var(--accent-color) 30%, transparent); color: var(--accent-color); font-size: 0.8rem; font-weight: 600;">
+                            <i class="bi bi-shield-lock-fill"></i> 100% Self-Hosted &amp; Private
+                        </div>
+                        <h2 class="fw-bold mb-3" style="color: var(--text-primary); font-size: 2.1rem; letter-spacing: -0.02em; line-height: 1.2;">
+                            Your Private Photo Cloud.<br>
+                            <span style="color: var(--accent-color);">Local Multimodal AI.</span>
+                        </h2>
+                        <p class="mb-4" style="color: var(--text-muted); font-size: 0.95rem; line-height: 1.6;">
+                            Retain total sovereignty over your photos and videos. Search naturally, cluster faces, and sync seamlessly from your devices without relying on third-party cloud services.
+                        </p>
+
+                        <div class="d-flex flex-column gap-3 mb-4">
+                            <div class="d-flex align-items-start gap-3">
+                                <div class="rounded-3 p-2 text-center" style="background: color-mix(in srgb, var(--accent-color) 12%, transparent); color: var(--accent-color); width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                                    <i class="bi bi-cpu fs-5"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-semibold" style="color: var(--text-primary); font-size: 0.92rem;">Local Multimodal AI Suite</div>
+                                    <div class="small" style="color: var(--text-muted);">InsightFace ArcFace clustering, OpenAI CLIP semantic search, YOLOv8 object tagging, and Tesseract OCR.</div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-items-start gap-3">
+                                <div class="rounded-3 p-2 text-center" style="background: color-mix(in srgb, #10b981 12%, transparent); color: #10b981; width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                                    <i class="bi bi-phone fs-5"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-semibold" style="color: var(--text-primary); font-size: 0.92rem;">Android Companion Sync</div>
+                                    <div class="small" style="color: var(--text-muted);">Instant QR &amp; 6-digit numeric PIN pairing, biometric lock, and background MediaStore synchronization.</div>
+                                </div>
+                            </div>
+
+                            <div class="d-flex align-items-start gap-3">
+                                <div class="rounded-3 p-2 text-center" style="background: color-mix(in srgb, #3b82f6 12%, transparent); color: #3b82f6; width: 40px; height: 40px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;">
+                                    <i class="bi bi-shield-check fs-5"></i>
+                                </div>
+                                <div>
+                                    <div class="fw-semibold" style="color: var(--text-primary); font-size: 0.92rem;">100% Data Sovereignty</div>
+                                    <div class="small" style="color: var(--text-muted);">Turnkey Docker setup with SHA-256 deduplication. Zero telemetry, zero subscriptions, and no cloud lock-in.</div>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex align-items-center gap-2 pt-3 flex-wrap" style="border-top: 1px solid var(--border-color);">
+                            <span class="badge rounded-pill bg-body-secondary text-body-secondary border px-3 py-2 small">
+                                <i class="bi bi-check-circle-fill text-success me-1"></i> Open Source (MIT)
+                            </span>
+                            <span class="badge rounded-pill bg-body-secondary text-body-secondary border px-3 py-2 small">
+                                <i class="bi bi-lightning-charge-fill text-warning me-1"></i> Qdrant Vector DB
+                            </span>
+                            <span class="badge rounded-pill bg-body-secondary text-body-secondary border px-3 py-2 small">
+                                <i class="bi bi-fingerprint text-info me-1"></i> Biometric Auth
+                            </span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Form Card Column -->
+                <div class="col-12 col-md-8 col-lg-6 col-xl-5 d-flex justify-content-center">
+                    <?= $this->renderSection('content') ?>
+                </div>
+            </div>
+        </div>
+    </main>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>

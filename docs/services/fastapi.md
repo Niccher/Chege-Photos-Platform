@@ -6,7 +6,7 @@ This document details the internal architecture of the FastAPI web application, 
 
 ## 1. Application Lifecycle (`lifespan`)
 
-FastAPI uses an asynchronous context manager (`@asynccontextmanager`) defined in [app/main.py](../../app/main.py) to manage startup and shutdown events.
+FastAPI uses an asynchronous context manager (`@asynccontextmanager`) defined in [app/main.py](../../ml/app/main.py) to manage startup and shutdown events.
 
 ### Non-Blocking Background Startup
 To prevent slow neural network initialization or database timeouts from blocking Uvicorn from binding port `8000`:

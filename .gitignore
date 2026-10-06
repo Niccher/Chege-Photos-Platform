@@ -61,6 +61,9 @@ ml/venv/
 ml/__pycache__/
 ml/*.pyc
 ml/models/
+ml/wheels/
+wheels/
+*.whl
 *.onnx
 
 # OS

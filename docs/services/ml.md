@@ -76,6 +76,16 @@ Using normalized centroids allows rapid $O(\log N)$ search in Qdrant rather than
 
 ---
 
+## 6. Model Weight Provisioning & Lifecycle
+
+Neural network weights are provisioned automatically without committing heavy binary blobs to version control:
+
+1. **Build-Time Pre-Download**: During container image creation, `ml/Dockerfile` executes [`scripts/download_all_models.py`](../../ml/scripts/download_all_models.py). This streams model weights (RetinaFace, ArcFace, YOLOv8n ONNX, OpenNSFW ONNX, and CLIP transformer checkpoints) directly into `/app/models`.
+2. **Runtime Lazy-Load Fallback**: If a model checkpoint is absent or an initial build was interrupted, [`app/ml/loader.py`](../../ml/app/ml/loader.py) dynamically fetches missing checkpoints on first request invocation.
+3. **Persistent Volume Mounting**: In production, the `insightface_models` Docker volume persists downloaded weights across container lifecycles to avoid repeated fetches.
+
+---
+
 ## Related Documentation
 
 * [Architecture Overview](../architecture/overview.md)

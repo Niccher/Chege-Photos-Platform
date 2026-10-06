@@ -1,60 +1,57 @@
 <?= $this->extend('layouts/public') ?>
 
-<?= $this->section('title') ?>About — Self-hosted photo management platform<?= $this->endSection() ?>
-<?= $this->section('description') ?>Learn about Chege Photos — a full-featured self-hosted photo management platform with upload, albums, sharing, analytics, memories, and ML-powered face recognition.<?= $this->endSection() ?>
+<?= $this->section('title') ?>About — Self-Hosted Private Photo Platform<?= $this->endSection() ?>
+<?= $this->section('description') ?>Learn about Chege Photos — a comprehensive self-hosted photo management platform featuring natural language semantic search (CLIP), facial clustering, YOLOv8 object tagging, OCR, and companion Android synchronization.<?= $this->endSection() ?>
 <?= $this->section('nav-about') ?>active<?= $this->endSection() ?>
 
 <?= $this->section('head') ?>
-<meta property="og:title" content="About Chege Photos — Self-hosted photo management">
-<meta property="og:description" content="A complete, self-hosted photo platform with web and mobile access, ML face recognition, smart albums, and full data privacy.">
-<meta name="keywords" content="self-hosted photos, photo management, open source, docker, PHP, CodeIgniter">
+<meta property="og:title" content="About Chege Photos — Self-Hosted Photo Cloud">
+<meta property="og:description" content="A complete self-hosted photo platform with web management, Android mobile companion, local multimodal AI vision engine, and encrypted GCP hybrid cloud backups.">
+<meta name="keywords" content="self-hosted photos, photo management, open source, docker, CLIP search, face recognition, YOLOv8, OCR, CodeIgniter, FastAPI">
 <?= $this->endSection() ?>
 
 <?= $this->section('content') ?>
 
 <div class="page-header">
     <h1>About Chege Photos</h1>
-    <p>A complete self-hosted photo management platform — upload, organise, search, analyse, and share your photos, all on your own infrastructure.</p>
+    <p>A complete self-hosted photo management platform — upload, organise, search with AI, analyse, and share your photos, all on your own private infrastructure.</p>
 </div>
 
 <section class="section">
     <div class="section-header">
         <h2>What is Chege Photos?</h2>
-        <p>It's a full-stack ecosystem that replaces cloud photo services with a self-hosted alternative that includes ML-powered face recognition.</p>
+        <p>A modern, unified platform replacing commercial cloud photo subscriptions with a sovereign on-premise alternative equipped with cutting-edge multimodal AI.</p>
     </div>
     <div class="row g-4">
         <div class="col-lg-6">
             <div class="card-pub h-100">
-                <h5>Core Web Application</h5>
-                <p>Built on CodeIgniter 4 with Shield authentication, the web app provides:</p>
+                <h5>Core Web Application & Portal</h5>
+                <p>Engineered on PHP 8.3 / CodeIgniter 4 with Shield authentication, the web portal provides:</p>
                 <ul style="color: var(--text-muted); font-size: 0.9rem; line-height: 2;">
-                    <li><strong>Upload</strong> — AJAX multi-file upload with Dropzone, 512 MB max per file</li>
-                    <li><strong>EXIF extraction</strong> — Camera, GPS, ISO, shutter speed, and more</li>
-                    <li><strong>Photo grid</strong> — Infinite scroll pagination with search and type filters</li>
-                    <li><strong>Fullscreen viewer</strong> — Carousel with keyboard navigation and slideshow</li>
-                    <li><strong>Albums</strong> — Manual albums and smart albums with rule-based auto-population</li>
-                    <li><strong>Bulk operations</strong> — Multi-select with batch favorite, archive, delete, add-to-album</li>
-                    <li><strong>Sharing</strong> — Share with other users or generate token-authenticated public links</li>
-                    <li><strong>Analytics</strong> — Storage charts, timeline, file types, camera stats</li>
-                    <li><strong>Memories</strong> — On-this-day and 6-months-ago feeds</li>
-                    <li><strong>Map explore</strong> — Leaflet map with photo heatmap overlay</li>
-                    <li><strong>Trash</strong> — Soft delete with 60-day retention</li>
+                    <li><strong>Upload & Processing</strong> — Chunked AJAX multi-file upload, 512 MB file limit, and EXIF extraction.</li>
+                    <li><strong>Natural Language Search</strong> — Instant plain-text queries via local CLIP vector embeddings.</li>
+                    <li><strong>Smart Rule Albums</strong> — Dynamic albums matching tags, camera models, dates, and people automatically.</li>
+                    <li><strong>EXIF Analytics & Heatmap</strong> — Timeline upload charts, camera stats, and Leaflet GPS heatmaps.</li>
+                    <li><strong>Memories Engine</strong> — Automated "On This Day" and seasonal flash-back feeds.</li>
+                    <li><strong>Secure Sharing</strong> — Multi-user permissions and tokenized public album links with expiration.</li>
+                    <li><strong>GCP Storage Hydration</strong> — Optional background sync to Google Cloud Storage for offsite disaster recovery.</li>
+                    <li><strong>Soft-Delete Trash</strong> — Multi-tenant safety with 60-day auto-purge retention policy.</li>
                 </ul>
             </div>
         </div>
         <div class="col-lg-6">
             <div class="card-pub h-100">
-                <h5>Face Recognition Dashboard</h5>
-                <p>The <strong>Faces</strong> section gives you a complete interface for managing detected faces and persons:</p>
+                <h5>Local Multimodal AI Vision Suite</h5>
+                <p>An on-premise FastAPI vision microservice executing zero-cloud inference:</p>
                 <ul style="color: var(--text-muted); font-size: 0.9rem; line-height: 2;">
-                    <li><strong>Person grid</strong> — All auto-discovered persons with face thumbnails, age, and gender</li>
-                    <li><strong>Photo detail</strong> — Face bounding boxes highlighted on the photo, gold border for the current person</li>
-                    <li><strong>Face modals</strong> — Click any face to see person details, link to all their photos</li>
-                    <li><strong>Carousel navigation</strong> — Browse all person's photos with left/right arrows and keyboard</li>
-                    <li><strong>Bulk scan</strong> — Scan all photos or individual photos with progress tracking</li>
-                    <li><strong>Name persons</strong> — Assign names to automatically-detected persons</li>
-                    <li><strong>Merge persons</strong> — Combine duplicate persons into one</li>
-                    <li><strong>Re-scan</strong> — Force re-scan of individual photos or the entire library</li>
+                    <li><strong>RetinaFace & ArcFace</strong> — High-accuracy face detection, 5-point alignment, and 512-d unit vectors.</li>
+                    <li><strong>HDBSCAN Face Clustering</strong> — Unsupervised grouping of faces into named person identities.</li>
+                    <li><strong>OpenAI CLIP Vector Search</strong> — Natural language cross-modal search indexed in Qdrant.</li>
+                    <li><strong>YOLOv8 Object Detection</strong> — Automatic visual tagging across 80+ common scene & object categories.</li>
+                    <li><strong>Tesseract OCR</strong> — In-photo text recognition for searchable signs, receipts, and documents.</li>
+                    <li><strong>2-Stage Safety Gate</strong> — OpenNSFW & NudeNet verification protecting shared family feeds.</li>
+                    <li><strong>Qdrant HNSW Index</strong> — Approximate Nearest Neighbor vector search in under 15 milliseconds.</li>
+                    <li><strong>Person Management</strong> — Merge duplicate identities, re-scan images, and update names with ease.</li>
                 </ul>
             </div>
         </div>
@@ -63,75 +60,77 @@
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Architecture</h2>
-        <p>All components run in Docker on a shared network, communicating via HTTP/REST.</p>
+        <h2>System Architecture</h2>
+        <p>All backend services run containerized on an isolated Docker bridge network, communicating via strictly defined REST contracts.</p>
     </div>
     <div class="diagram-box">
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        Docker (hosts-shared-network)                     │
-│                                                                         │
-│  Browser ──HTTPS──▶ Web App (PHP 8.3 Apache, host 9005)                │
-│                       │                                                  │
-│                       ├── MySQL 8.4 (container 3306 / host 9306)        │
-│                       │   photos, users, albums, shares                  │
-│                       │                                                  │
-│                       ├── ML Service (FastAPI, host 9051)               │
-│                       │   ├── Qdrant (container 6333 / host 9052)       │
-│                       │   └── Read-only mount of /public/uploads         │
-│                       │                                                  │
-│                       └── phpMyAdmin (host 9000) — dev convenience      │
-│                                                                         │
-│  Android App ──HTTPS──▶ Web App REST API (token auth)                   │
-│                    └──▶ ML Service API (face search)                    │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                        Chege Photos Platform (Docker Network)                          │
+│                                                                                        │
+│  Browser / Client ──HTTP:80──▶ Web Application (PHP 8.3 Apache / CodeIgniter 4)        │
+│                                  │                                                     │
+│                                  ├── MySQL 8.4 (Port 3306)                             │
+│                                  │   Users, albums, EXIF, tags, person metadata        │
+│                                  │                                                     │
+│                                  ├── Redis 7 (Port 6379)                               │
+│                                  │   Session cache, rate limiting & scan job queues    │
+│                                  │                                                     │
+│                                  ├── ML Microservice (FastAPI / Port 8000)             │
+│                                  │   ├── InsightFace, CLIP, YOLOv8, OCR pipelines      │
+│                                  │   ├── Qdrant Vector Engine (Port 6333)              │
+│                                  │   └── Read-only mount of /uploads                   │
+│                                  │                                                     │
+│                                  └── Google Cloud Storage (Optional Offsite Backup)    │
+│                                                                                        │
+│  Android Client ────HTTP:80──▶ Web App Gateway (All ML features served via /api/v1)   │
+└────────────────────────────────────────────────────────────────────────────────────────┘
     </div>
 </section>
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Tech Stack</h2>
+        <h2>Production Tech Stack</h2>
     </div>
     <div class="row g-3">
         <div class="col-md-4">
             <div class="card-pub h-100">
-                <h5>Web App</h5>
+                <h5>Web Management</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    PHP 8.3<br>
-                    CodeIgniter 4 + Shield 1.2<br>
-                    Apache 2.4 (mod_rewrite)<br>
-                    MySQL 8.4<br>
-                    Bootstrap 5.3<br>
-                    jQuery, Chart.js, Leaflet<br>
-                    Dropzone.js, Fabric.js
+                    PHP 8.3 & Apache 2.4<br>
+                    CodeIgniter 4 + Shield Auth<br>
+                    MySQL 8.4 (Relational DB)<br>
+                    Redis 7 (In-Memory Broker)<br>
+                    Bootstrap 5.3 + Multi-Theme Engine<br>
+                    Leaflet GPS Heatmaps & Chart.js<br>
+                    Standard Port: <strong>80</strong>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="card-pub h-100">
-                <h5>ML Backend</h5>
+                <h5>AI Vision Backend</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    Python 3.12<br>
-                    FastAPI 0.115.6 + Uvicorn<br>
-                    SQLAlchemy 2.0 + PyMySQL<br>
-                    Insightface 0.7.3 (<?= esc($faceModelPack) ?>)<br>
-                    Qdrant 1.13.2 (vector DB)<br>
-                    scikit-learn 1.9 (HDBSCAN)<br>
-                    OpenCV 5.0, NumPy 2.5
+                    Python 3.12 / FastAPI<br>
+                    InsightFace (RetinaFace + ArcFace)<br>
+                    OpenAI CLIP (Transformer Embeddings)<br>
+                    Ultralytics YOLOv8 (Object Detection)<br>
+                    Tesseract OCR (Text Extraction)<br>
+                    Qdrant 1.13 (HNSW Vector DB)<br>
+                    Standard Port: <strong>8000</strong>
                 </div>
             </div>
         </div>
         <div class="col-md-4">
             <div class="card-pub h-100">
-                <h5>Android App</h5>
+                <h5>Android Companion</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    Kotlin 2.0.21<br>
-                    Jetpack Compose (BOM 2024.09)<br>
-                    Material 3<br>
+                    Kotlin 2.0+ / Coroutines<br>
+                    Jetpack Compose UI & Material 3<br>
+                    Biometric Prompt (Fingerprint)<br>
+                    WorkManager Background Sync<br>
                     Retrofit 2.11 + OkHttp 4.12<br>
-                    Coil 2.6 (image loading)<br>
-                    Room 2.6 (local cache)<br>
-                    CameraX 1.4 + ML Kit 17.3<br>
-                    minSdk 29 / targetSdk 36
+                    Room Database (Local Cache)<br>
+                    Min SDK 29 / Target SDK 36
                 </div>
             </div>
         </div>
@@ -140,36 +139,36 @@
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Data flow</h2>
-        <p>How a photo travels from upload to being searchable by face.</p>
+        <h2>Multimodal Ingestion Pipeline</h2>
+        <p>How an uploaded photo is securely cataloged and enriched with artificial intelligence.</p>
     </div>
     <div class="row g-4">
         <div class="col-md-3">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">1</div>
-                <h6 style="font-size:0.85rem;">Upload</h6>
-                <p style="font-size:0.82rem;">Photo uploaded via web or Android. Stored in <code>public/uploads/</code>. EXIF extracted and saved to MySQL.</p>
+                <h6 style="font-size:0.85rem;">Upload & EXIF</h6>
+                <p style="font-size:0.82rem;">Image received via Web or Android. EXIF tags (camera, GPS, timestamp) are extracted and saved to MySQL.</p>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">2</div>
-                <h6 style="font-size:0.85rem;">Scan</h6>
-                <p style="font-size:0.82rem;">ML service reads the photo from the shared mount. Insightface detects faces and extracts 512-d embeddings.</p>
+                <h6 style="font-size:0.85rem;">Vision Extraction</h6>
+                <p style="font-size:0.82rem;">FastAPI processes the image: InsightFace detects faces, YOLOv8 tags objects, and Tesseract extracts text.</p>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">3</div>
-                <h6 style="font-size:0.85rem;">Index</h6>
-                <p style="font-size:0.82rem;">Embeddings stored in Qdrant. Face metadata (bbox, landmarks, age, gender) stored in MySQL <code>face_encoding</code> table.</p>
+                <h6 style="font-size:0.85rem;">Vector Embeddings</h6>
+                <p style="font-size:0.82rem;">ArcFace generates 512-d face vectors and CLIP encodes the image. Embeddings are indexed into Qdrant collections.</p>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">4</div>
-                <h6 style="font-size:0.85rem;">Cluster</h6>
-                <p style="font-size:0.82rem;">HDBSCAN groups embeddings into persons. Each person gets a centroid vector. The web app displays the grouped results.</p>
+                <h6 style="font-size:0.85rem;">Clustering & Search</h6>
+                <p style="font-size:0.82rem;">HDBSCAN groups faces into named persons. Library becomes instantly searchable by concept, person, or keyword.</p>
             </div>
         </div>
     </div>
@@ -177,8 +176,8 @@
 
 <section class="section-sm" style="border-top: 1px solid var(--border-color);">
     <div class="text-center">
-        <h3 style="font-weight: 700; color: var(--text-primary);">Ready to deploy?</h3>
-        <p style="color: var(--text-muted);">Jump to the <a href="<?= base_url('setup') ?>" class="auth-link">setup guide</a> or <a href="<?= url_to('register') ?>" class="auth-link">create an account</a> if your instance is already running.</p>
+        <h3 style="font-weight: 700; color: var(--text-primary);">Ready to deploy your instance?</h3>
+        <p style="color: var(--text-muted);">Consult the step-by-step <a href="<?= base_url('setup') ?>" class="auth-link">setup guide</a> or <a href="<?= url_to('register') ?>" class="auth-link">create an account</a> on an active server.</p>
     </div>
 </section>
 
