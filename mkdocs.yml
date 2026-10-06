@@ -1,5 +1,5 @@
-site_name: Chege Photos WebApp Documentation
-site_description: Engineering & User documentation for Chege Photos WebApp (CodeIgniter 4, MySQL 8.4)
+site_name: Chege Photos Platform Documentation
+site_description: Engineering & User documentation for Chege Photos Platform (CodeIgniter 4, FastAPI, Qdrant, MySQL 8.4)
 theme:
   name: material
   palette:
@@ -48,9 +48,11 @@ nav:
       - Deployment: architecture/deployment.md
       - Threat Model: architecture/threat-model.md
   - API Reference:
-      - REST Contract: api/contract.md
+      - Mobile REST Contract: api/contract.md
   - Services:
-      - CodeIgniter 4: services/codeigniter.md
+      - CodeIgniter 4 Web: services/codeigniter.md
+      - FastAPI Microservice: services/fastapi.md
+      - ML Models & Vision: services/ml.md
   - Engineering:
       - Local Development: engineering/local-development.md
       - Making Changes: engineering/making-changes.md
@@ -67,3 +69,4 @@ nav:
   - Architecture Decision Records:
       - "0001: Hybrid QR & Numeric Pairing": adr/0001-hybrid-qr-numeric-pairing.md
       - "0002: Unified Feed Aggregation": adr/0002-unified-feed-aggregation.md
+      - "0004: Decoupled ML Microservice": adr/0004-decoupled-microservice-ml.md

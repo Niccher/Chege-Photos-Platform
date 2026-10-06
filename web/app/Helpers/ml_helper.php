@@ -57,6 +57,7 @@ if (! function_exists('get_ml_candidate_urls')) {
         }
 
         // 5. Local Docker / Development defaults
+        $urls[] = 'http://ml:8000';
         $urls[] = 'http://ml-chege-photos:8000';
         $urls[] = 'http://127.0.0.1:8000';
         $urls[] = 'http://localhost:9051';

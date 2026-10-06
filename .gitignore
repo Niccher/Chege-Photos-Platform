@@ -9,7 +9,7 @@
 *.swp
 *.swo
 
-# Dependencies
+# Universal Dependencies
 vendor/
 node_modules/
 __pycache__/
@@ -32,29 +32,37 @@ logs/
 *.sqlite
 *.sqlite3
 
-# CodeIgniter 4 Writable and Uploads
-/writable/cache/*
-/writable/debugbar/*
-/writable/logs/*
-/writable/session/*
-/writable/uploads/*
-/writable/exports/*
-/writable/backups/*
-!/writable/cache/.gitkeep
-!/writable/debugbar/.gitkeep
-!/writable/logs/.gitkeep
-!/writable/session/.gitkeep
-!/writable/uploads/.gitkeep
-!/writable/exports/.gitkeep
-!/writable/backups/.gitkeep
+# Web (CodeIgniter 4) Writable and Uploads
+web/vendor/
+web/writable/cache/*
+web/writable/debugbar/*
+web/writable/logs/*
+web/writable/session/*
+web/writable/uploads/*
+web/writable/exports/*
+web/writable/backups/*
+!web/writable/cache/.gitkeep
+!web/writable/debugbar/.gitkeep
+!web/writable/logs/.gitkeep
+!web/writable/session/.gitkeep
+!web/writable/uploads/.gitkeep
+!web/writable/exports/.gitkeep
+!web/writable/backups/.gitkeep
 
 # Public user-uploaded content
-/public/uploads/*
-/public/thumbnails/*
-!/public/uploads/.gitkeep
-!/public/thumbnails/.gitkeep
+web/public/uploads/*
+web/public/thumbnails/*
+!web/public/uploads/.gitkeep
+!web/public/thumbnails/.gitkeep
+
+# ML & Models
+ml/.venv/
+ml/venv/
+ml/__pycache__/
+ml/*.pyc
+ml/models/
+*.onnx
 
 # OS
 .DS_Store
 Thumbs.db
-

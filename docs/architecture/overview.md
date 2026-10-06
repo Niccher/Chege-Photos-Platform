@@ -38,7 +38,6 @@ C4Context
 |---|---|---|---|---|
 | `chege-photos-webapp` | PHP 8.3 Apache | `80` | `9005` | Web controllers, views, REST API, fallback hydration, cron runner |
 | `shared-mysql` | MySQL 8.4 | `3306` | `9306` | Relational storage for users, photos, albums, and system logs |
-| `shared-phpmyadmin` | phpMyAdmin | `80` | `9000` | Database administration and query inspection interface |
 | `ml-service` (optional) | FastAPI / PyTorch | `9051` | `9051` | Asynchronous face detection, object tagging, and vector generation |
 | `ml-qdrant` (optional) | Qdrant | `6333` / `6334` | `9052` / `9053` | Sub-second HNSW cosine vector similarity indexing |
 
