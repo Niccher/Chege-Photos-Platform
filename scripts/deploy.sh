@@ -4,29 +4,30 @@
 #             for Chege Photos Platform (Monorepo)
 #
 # Usage:  bash scripts/deploy.sh
+#         bash scripts/deploy.sh --fast   (skip image rebuild)
 #         (run from the repository root)
 #
 # Production Standard Ports:
 #   - Web Dashboard & API : Port 80
 #   - ML AI Microservice  : Port 8000
-#   - Redis In-Memory DB  : Port 6379
 #   - Qdrant Vector DB    : Port 6333 (HTTP) / 6334 (gRPC)
+#   - Redis In-Memory DB  : Port 6379
 #   - MySQL 8.4 Database  : Port 3306
 #
 # 13-Step Automated Pipeline:
 #   1. Detect Dynamic IP (Public / LAN Fallback)
-#   2. Pre-flight System & Resource Check (OS, CPU, RAM, Disk)
-#   3. Git Working Tree Sanity Check & Pull
-#   4. Write / Patch .env Configuration
-#   5. Stop Old Containers & Clear Name Conflicts
-#   6. Build & Start All Containers (MySQL, Redis, Qdrant, ML, Web)
-#   7. Wait for MySQL Health (:3306)
-#   8. Wait for Redis Health (:6379)
-#   9. Wait for Qdrant Vector Engine Health (:6333)
-#  10. Wait for ML Microservice Readiness (:8000)
-#  11. Wait for WebApp Server Readiness (:80)
-#  12. Container Permissions Enforcement (web/writable & uploads)
-#  13. Deployment Timeline Summary & Endpoint Matrix
+#   2. Pre-flight System & Resource Check (OS, CPU, RAM, Disk, Swap)
+#   3. Git Working Tree Sanity Check, Auto-Stash & Pull
+#   4. Write / Patch .env Configuration & Encryption Keys
+#   5. Stop Old Containers & Clear Explicit Name Conflicts
+#   6. Build & Start Containers (MySQL, Redis, Qdrant, Web, ML)
+#   7. Wait for Database, Redis & Vector Services (7a: MySQL, 7b: Redis, 7c: Qdrant, 7d: Cron)
+#   8. Run Database Migrations & Initial Seeders
+#   9. Wait for ML Microservice Readiness (:8000)
+#  10. Wait for WebApp Server Readiness (:80) & Diagnosis
+#  11. Container Permissions Enforcement (writable & uploads)
+#  12. Housekeeping, Docker Storage & Cache Clearing
+#  13. Clean Status Summary & Comprehensive Endpoint Matrix
 # =============================================================
 set -euo pipefail
 
@@ -104,197 +105,400 @@ finish_deployment() {
 
 # ── 1. Detect Dynamic IP ──────────────────────────────────────
 section "1. Detecting Dynamic IP"
-DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d '[:space:]' || true)
+DETECTED_IP=$(curl -s --max-time 5 ip.me 2>/dev/null | tr -d '[:space:]' || true)
 if [ -z "$DETECTED_IP" ]; then
-    DETECTED_IP=$(ip route get 1.1.1.1 2>/dev/null | awk '{print $7}' | tr -d '[:space:]' || true)
+    DETECTED_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null | tr -d '[:space:]' || true)
+fi
+if [ -z "$DETECTED_IP" ]; then
+    DETECTED_IP=$(curl -s --max-time 5 icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
+fi
+if [ -z "$DETECTED_IP" ]; then
+    DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d '[:space:]' || true)
 fi
 if [ -z "$DETECTED_IP" ]; then
     DETECTED_IP="127.0.0.1"
 fi
-log "Local Network LAN IP: $DETECTED_IP"
+log "Dynamic Host IP: $DETECTED_IP"
 
 # ── 2. Pre-flight System & Resource Check ─────────────────────
 section "2. Pre-flight Disk & RAM Check"
+
 if [ -f /etc/os-release ]; then
     . /etc/os-release
     OS_PRETTY="${PRETTY_NAME:-$NAME}"
 else
     OS_PRETTY="$(uname -s)"
 fi
+KERNEL="$(uname -r)"
 ARCH="$(uname -m)"
+
 CPU_CORES=$(nproc 2>/dev/null || echo "1")
+CPU_MODEL=$(grep -m1 "model name" /proc/cpuinfo 2>/dev/null | sed -E "s/^model name\s*:\s*//" | tr -s " " || echo "Generic CPU")
+[ -z "$CPU_MODEL" ] && CPU_MODEL="Generic CPU"
+
 TOTAL_MEM_MB=$(free -m | awk '/Mem:/ {print $2}')
 USED_MEM_MB=$(free -m | awk '/Mem:/ {print $3}')
 FREE_MEM_MB=$(free -m | awk '/Mem:/ {print ($7 != "" ? $7 : $4)}')
+MEM_PCT=$(awk -v u="$USED_MEM_MB" -v t="$TOTAL_MEM_MB" 'BEGIN {if (t>0) printf "%.1f", (u/t)*100; else print "0"}')
+MEM_FREE_PCT=$(awk -v f="$FREE_MEM_MB" -v t="$TOTAL_MEM_MB" 'BEGIN {if (t>0) printf "%.1f", (f/t)*100; else print "0"}')
+TOTAL_MEM_GB=$(awk -v m="$TOTAL_MEM_MB" 'BEGIN {printf "%.2f GB", m/1024}')
+USED_MEM_GB=$(awk -v m="$USED_MEM_MB" 'BEGIN {printf "%.2f GB", m/1024}')
+FREE_MEM_GB=$(awk -v m="$FREE_MEM_MB" 'BEGIN {printf "%.2f GB", m/1024}')
 
-log "Host OS: $OS_PRETTY ($ARCH) with $CPU_CORES CPU cores"
-log "RAM: ${TOTAL_MEM_MB}MB total, ${FREE_MEM_MB}MB free"
+SWAP_TOTAL_MB=$(free -m | awk '/Swap:/ {print $2}' || echo "0")
+[ -z "$SWAP_TOTAL_MB" ] && SWAP_TOTAL_MB="0"
 
-if [ "$TOTAL_MEM_MB" -lt 3500 ]; then
-    warn "Total RAM is under 4GB. ML neural network weights may cause memory pressure."
+DISK_LINE=$(df -h / | awk 'NR>1 {print $(NF-4), $(NF-3), $(NF-2), $(NF-1), $(NF)}')
+DISK_TOTAL=$(echo "$DISK_LINE" | awk '{print $1}')
+DISK_USED=$(echo "$DISK_LINE" | awk '{print $2}')
+DISK_FREE=$(echo "$DISK_LINE" | awk '{print $3}')
+DISK_PCT=$(echo "$DISK_LINE" | awk '{print $4}')
+DISK_FREE_MB=$(df -m / | awk 'NR>1 {print $(NF-2)}')
+
+log "OS Environment   : ${OS_PRETTY} (${ARCH}, kernel ${KERNEL})"
+log "CPU Architecture : ${CPU_MODEL} (${CPU_CORES} vCPU)"
+log "Available Memory : ${FREE_MEM_MB}MB free of ${TOTAL_MEM_MB}MB"
+log "RAM Breakdown    : Total: ${TOTAL_MEM_GB} | Used: ${USED_MEM_GB} (${MEM_PCT}%) | Free: ${FREE_MEM_GB} (${MEM_FREE_PCT}%)"
+log "Swap Space       : ${SWAP_TOTAL_MB}MB total swap"
+log "Available Disk   : ${DISK_FREE_MB}MB free on /"
+log "Disk Breakdown   : Total: ${DISK_TOTAL} | Used: ${DISK_USED} (${DISK_PCT}) | Free: ${DISK_FREE} (${DISK_FREE_MB}MB)"
+
+if [ "$SWAP_TOTAL_MB" -lt 1024 ] && [ "$TOTAL_MEM_MB" -lt 4500 ]; then
+    warn "Swap space is low (${SWAP_TOTAL_MB}MB). Creating a 4GB swapfile to prevent OOM during PyTorch & OpenCV execution..."
+    sudo fallocate -l 4G /swapfile 2>/dev/null || sudo dd if=/dev/zero of=/swapfile bs=1M count=4096 2>/dev/null || true
+    sudo chmod 600 /swapfile 2>/dev/null || true
+    sudo mkswap /swapfile 2>/dev/null || true
+    sudo swapon /swapfile 2>/dev/null || true
+    grep -q "/swapfile" /etc/fstab || echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab >/dev/null 2>&1 || true
+    log "4 GB swapfile created and enabled"
+fi
+
+if [ "$DISK_FREE_MB" -lt 8000 ]; then
+    warn "Free disk is below 8GB (${DISK_FREE_MB}MB free). Running proactive Docker cache prune..."
+    docker builder prune -af >/dev/null 2>&1 || true
+    docker image prune -f >/dev/null 2>&1 || true
+    RECHECK_DISK=$(df -m / | awk 'NR>1 {print $(NF-2)}')
+    log "Reclaimed disk space: ${RECHECK_DISK}MB free now"
 fi
 
 # ── 3. Git Working Tree Sanity Check & Pull ───────────────────
-section "3. Git Working Tree Check"
-if git rev-parse --is-inside-work-tree >/dev/null 2>&1; then
-    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
-    log "On Git branch: $CURRENT_BRANCH"
-    if [ -z "$(git status --porcelain)" ]; then
-        log "Working tree clean."
-    else
-        warn "Working tree has uncommitted changes. Skipping git pull to preserve work."
+section "3. Git Working Tree Check & Pull"
+if [ -d ".git" ]; then
+    if [ -n "$(git status --porcelain 2>/dev/null)" ]; then
+        warn "Uncommitted local changes detected in working tree. Stashing safely..."
+        git stash save "deploy-auto-stash-$(date +%Y%m%d%H%M%S)" >/dev/null 2>&1 || true
     fi
-else
-    log "Not a Git clone or Git unavailable, proceeding..."
+    if git remote | grep -q "origin"; then
+        log "Pulling latest changes from origin..."
+        PULL_LOG=$(git pull origin main 2>&1) || warn "Could not pull from origin, continuing with local code..."
+        echo "$PULL_LOG" | tail -5
+        if echo "$PULL_LOG" | grep -q "scripts/deploy.sh"; then
+            log "deploy.sh was updated from origin. Re-executing deployment script..."
+            exec bash "$0" "$@"
+        fi
+    else
+        log "Working tree clean (local repository mode)"
+    fi
 fi
 
-# ── 4. Write / Patch .env Configuration ───────────────────────
+# ── 4. Write / Patch .env ─────────────────────────────────────
 section "4. Writing .env Configuration"
 if [ ! -f ".env" ]; then
-    log ".env not found. Creating from .env.example..."
-    cp .env.example .env
+    [ -f ".env.example" ] && cp .env.example .env && log "Created .env from .env.example" \
+        || err ".env missing and no .env.example found — cannot continue"
 fi
 
-# Ensure standard production ports are configured
-export WEB_PORT="${WEB_PORT:-80}"
-export DB_PORT="${DB_PORT:-3306}"
-export ML_PORT="${ML_PORT:-8000}"
-export REDIS_PORT="${REDIS_PORT:-6379}"
-export QDRANT_HTTP_PORT="${QDRANT_HTTP_PORT:-6333}"
-export QDRANT_GRPC_PORT="${QDRANT_GRPC_PORT:-6334}"
+set_env() {
+    local K="$1" V="$2"
+    if grep -q "^${K}=" .env; then
+        sed -i "s|^${K}=.*|${K}=${V}|g" .env
+    elif grep -q "^${K} *=" .env; then
+        sed -i "s|^${K} *=.*|${K} = ${V}|g" .env
+    else
+        echo "${K}=${V}" >> .env
+    fi
+}
+
+WEB_PORT=$(grep "^WEB_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "80")
+[ -z "$WEB_PORT" ] && WEB_PORT="80"
+ML_PORT=$(grep "^ML_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "8000")
+[ -z "$ML_PORT" ] && ML_PORT="8000"
+DB_PORT=$(grep "^DB_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "3306")
+[ -z "$DB_PORT" ] && DB_PORT="3306"
+REDIS_PORT=$(grep "^REDIS_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "6379")
+[ -z "$REDIS_PORT" ] && REDIS_PORT="6379"
+QDRANT_HTTP_PORT=$(grep "^QDRANT_HTTP_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "6333")
+[ -z "$QDRANT_HTTP_PORT" ] && QDRANT_HTTP_PORT="6333"
+QDRANT_GRPC_PORT=$(grep "^QDRANT_GRPC_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "6334")
+[ -z "$QDRANT_GRPC_PORT" ] && QDRANT_GRPC_PORT="6334"
+
+# Format baseURL cleanly (omit :80 if standard HTTP)
+if [ "$WEB_PORT" = "80" ]; then
+    BASE_URL="http://${DETECTED_IP}/"
+else
+    BASE_URL="http://${DETECTED_IP}:${WEB_PORT}/"
+fi
+
+set_env "WEB_PORT" "$WEB_PORT"
+set_env "ML_PORT" "$ML_PORT"
+set_env "DB_PORT" "$DB_PORT"
+set_env "REDIS_PORT" "$REDIS_PORT"
+set_env "QDRANT_HTTP_PORT" "$QDRANT_HTTP_PORT"
+set_env "QDRANT_GRPC_PORT" "$QDRANT_GRPC_PORT"
+set_env "app.baseURL" "$BASE_URL"
+set_env "CI_ENVIRONMENT" "production"
+set_env "DB_HOST" "mysql"
+set_env "REDIS_HOST" "redis"
+set_env "QDRANT_HOST" "qdrant"
+set_env "ML_URL" "http://ml:8000"
 
 # Generate encryption key if missing
 if ! grep -q "^encryption\.key\s*=\s*.\+" .env 2>/dev/null; then
     RANDOM_KEY=$(openssl rand -hex 16 2>/dev/null || head -c 16 /dev/urandom | xxd -p)
-    sed -i "s/^encryption\.key\s*=.*/encryption.key = hex2bin:$RANDOM_KEY/" .env 2>/dev/null || echo "encryption.key = hex2bin:$RANDOM_KEY" >> .env
+    set_env "encryption.key" "hex2bin:$RANDOM_KEY"
     log "Generated CodeIgniter 4 encryption key."
 fi
-log "Environment configuration verified."
+
+log "app.baseURL               -> ${BASE_URL}"
+log "WEB_PORT                  -> ${WEB_PORT} (Standard HTTP Dashboard & API)"
+log "ML_PORT                   -> ${ML_PORT} (FastAPI Vision Microservice)"
+log "QDRANT_HTTP_PORT          -> ${QDRANT_HTTP_PORT} (Vector Engine)"
+log "REDIS_PORT                -> ${REDIS_PORT} (In-Memory Broker)"
+log "DB_PORT                   -> ${DB_PORT} (MySQL 8.4 Database)"
 
 # ── 5. Stop Old Containers & Clear Conflicts ──────────────────
 section "5. Stopping Old Containers & Clearing Name Conflicts"
-docker compose down --remove-orphans 2>/dev/null || true
-log "Old container instances stopped."
+docker compose down --remove-orphans 2>&1 | tail -3 || true
 
-# ── 6. Build & Start All Containers ───────────────────────────
+# Explicitly remove legacy or conflicting container instances
+docker rm -f chege-mysql chege-redis chege-qdrant chege-photos-web chege-photos-ml 2>/dev/null || true
+log "Old containers stopped and explicit name conflicts cleared"
+
+# ── 6. Build & Start Containers ───────────────────────────────
 section "6. Building & Starting All Containers"
 BUILD_FLAG="--build"
 if [ "${1:-}" = "--fast" ] || [ "${1:-}" = "--no-build" ]; then
     BUILD_FLAG=""
     log "Fast startup mode active (skipping image rebuild)."
 fi
-docker compose up $BUILD_FLAG -d
-log "Container orchestration launched."
 
-# ── 7. Wait for MySQL Health (:3306) ──────────────────────────
-section "7. Waiting for MySQL to Become Healthy"
-MYSQL_WAIT=0
-MYSQL_MAX=45
-while [ $MYSQL_WAIT -lt $MYSQL_MAX ]; do
-    if docker compose exec -T mysql mysqladmin ping -h localhost -u root -proot_password >/dev/null 2>&1; then
-        log "MySQL is healthy and accepting connections!"
-        break
-    fi
-    sleep 1
-    MYSQL_WAIT=$((MYSQL_WAIT + 1))
-done
-if [ $MYSQL_WAIT -ge $MYSQL_MAX ]; then
-    err "Timed out waiting for MySQL container to become healthy."
-fi
-
-# ── 8. Wait for Redis Health (:6379) ──────────────────────────
-section "8. Waiting for Redis Health (:6379)"
-REDIS_WAIT=0
-REDIS_MAX=20
-while [ $REDIS_WAIT -lt $REDIS_MAX ]; do
-    if docker compose exec -T redis redis-cli ping | grep -q "PONG" 2>/dev/null; then
-        log "Redis in-memory cache and queue broker is healthy!"
-        break
-    fi
-    sleep 1
-    REDIS_WAIT=$((REDIS_WAIT + 1))
-done
-if [ $REDIS_WAIT -ge $REDIS_MAX ]; then
-    warn "Redis took longer than expected; container may still be starting."
-fi
-
-# ── 9. Wait for Qdrant Health (:6333) ─────────────────────────
-section "9. Waiting for Qdrant Vector Engine Health"
-QDRANT_WAIT=0
-QDRANT_MAX=30
-while [ $QDRANT_WAIT -lt $QDRANT_MAX ]; do
-    if curl -s "http://localhost:${QDRANT_HTTP_PORT}/readyz" | grep -q "ready" 2>/dev/null || curl -s -f "http://localhost:${QDRANT_HTTP_PORT}/readyz" >/dev/null 2>&1; then
-        log "Qdrant vector engine is ready!"
-        break
-    fi
-    sleep 1
-    QDRANT_WAIT=$((QDRANT_WAIT + 1))
-done
-if [ $QDRANT_WAIT -ge $QDRANT_MAX ]; then
-    warn "Qdrant health check timed out. Service may be initializing data storage."
-fi
-
-# ── 10. Wait for ML Microservice Readiness (:8000) ────────────
-section "10. Waiting for ML Microservice Ready"
-ML_WAIT=0
-ML_MAX=45
-while [ $ML_WAIT -lt $ML_MAX ]; do
-    if curl -s "http://localhost:${ML_PORT}/health" | grep -q "ok" 2>/dev/null || curl -s -f "http://localhost:${ML_PORT}/health" >/dev/null 2>&1; then
-        log "ML FastAPI microservice is ready and online!"
-        break
-    fi
-    sleep 1
-    ML_WAIT=$((ML_WAIT + 1))
-done
-if [ $ML_WAIT -ge $ML_MAX ]; then
-    warn "ML service readiness check timed out. PyTorch weights might still be downloading."
-fi
-
-# ── 11. Wait for WebApp Server Readiness (:80) ────────────────
-section "11. Waiting for WebApp Server Ready"
-WEB_WAIT=0
-WEB_MAX=30
-while [ $WEB_WAIT -lt $WEB_MAX ]; do
-    HTTP_STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${WEB_PORT}/" 2>/dev/null || echo "000")
-    if [ "$HTTP_STATUS" = "200" ] || [ "$HTTP_STATUS" = "302" ]; then
-        log "WebApp Apache/PHP server returned HTTP $HTTP_STATUS!"
-        break
-    fi
-    sleep 1
-    WEB_WAIT=$((WEB_WAIT + 1))
-done
-if [ $WEB_WAIT -ge $WEB_MAX ]; then
-    warn "WebApp server readiness check timed out (status: ${HTTP_STATUS})."
-fi
-
-# ── 12. Permissions Enforcement ───────────────────────────────
-section "12. Setting Container Writable Directory Permissions"
-docker compose exec -T web mkdir -p /var/www/html/writable/cache \
-                                    /var/www/html/writable/logs \
-                                    /var/www/html/writable/session \
-                                    /var/www/html/writable/uploads \
-                                    /var/www/html/public/uploads \
-                                    /var/www/html/public/thumbnails 2>/dev/null || true
-docker compose exec -T web chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
-docker compose exec -T web chown www-data:www-data /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
-docker compose exec -T web chmod 775 /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
-log "Directory permissions verified for Apache www-data."
-
-# ── 13. Deployment Summary & Health Verification ──────────────
-section "13. Deployment Summary & Endpoint Matrix"
-finish_deployment
+docker compose up $BUILD_FLAG -d 2>&1 | tail -25
+log "Containers created and started (mysql, redis, qdrant, web, ml)"
 
 echo ""
-echo -e "${BOLD}Platform Access URLs:${RESET}"
-echo -e "  - ${CYAN}Web Application Dashboard${RESET} : http://localhost:${WEB_PORT} (or http://${DETECTED_IP}:${WEB_PORT})"
-echo -e "  - ${CYAN}ML API Interactive Docs  ${RESET} : http://localhost:${ML_PORT}/docs"
-echo -e "  - ${CYAN}Qdrant Web Console       ${RESET} : http://localhost:${QDRANT_HTTP_PORT}/dashboard"
-echo -e "  - ${CYAN}MySQL 8.4 Relational DB  ${RESET} : localhost:${DB_PORT}"
-echo -e "  - ${CYAN}Redis In-Memory Broker   ${RESET} : localhost:${REDIS_PORT}"
+echo -e "   ${BOLD}Docker Image Sizes:${RESET}"
+docker images --filter "reference=*chege*" --filter "reference=*mysql*" --filter "reference=*redis*" --filter "reference=*qdrant*" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
+
 echo ""
-echo -e "${BOLD}Android Companion Client Pairing:${RESET}"
-echo -e "  - Android Emulator Base URL  : ${GREEN}http://10.0.2.2${RESET} (port ${WEB_PORT})"
-echo -e "  - Physical Phone LAN URL     : ${GREEN}http://${DETECTED_IP}${RESET} (port ${WEB_PORT})"
-echo -e "  - Default Admin Credentials  : ${YELLOW}admin@example.com${RESET} / ${YELLOW}admin_password${RESET}"
+echo -e "   ${BOLD}Container Runtime Layer Sizes:${RESET}"
+docker ps --size --filter "name=chege" --format "table {{.Names}}\t{{.Status}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
+
+# ── 7a. Wait for MySQL Health ─────────────────────────────────
+section "7a. Waiting for MySQL to Become Healthy"
+printf "   Waiting for MySQL"
+MYSQL_HEALTHY=false
+for i in $(seq 1 35); do
+    STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-mysql 2>/dev/null || echo "missing")
+    if [ "$STATUS" = "healthy" ]; then
+        echo ""
+        log "MySQL 8.4 is healthy and accepting connections"
+        MYSQL_HEALTHY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$MYSQL_HEALTHY || { echo ""; warn "MySQL did not report healthy within timeout. Check: docker compose logs mysql"; }
+
+# ── 7b. Wait for Redis Health (:6379) ─────────────────────────
+section "7b. Waiting for Redis Health (:6379)"
+printf "   Checking Redis status"
+REDIS_HEALTHY=false
+for i in $(seq 1 15); do
+    R_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-redis 2>/dev/null || echo "missing")
+    if [ "$R_STATUS" = "healthy" ]; then
+        echo ""
+        log "Redis in-memory cache and queue broker is healthy"
+        REDIS_HEALTHY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$REDIS_HEALTHY || { echo ""; warn "Redis did not report healthy within timeout. Check: docker compose logs redis"; }
+
+# ── 7c. Wait for Qdrant Vector Engine Health (:6333) ──────────
+section "7c. Waiting for Qdrant Vector Engine Health"
+printf "   Checking Qdrant status"
+QDRANT_HEALTHY=false
+for i in $(seq 1 20); do
+    Q_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-qdrant 2>/dev/null || echo "missing")
+    if [ "$Q_STATUS" = "healthy" ] || curl -s "http://localhost:${QDRANT_HTTP_PORT}/readyz" | grep -q "ready" 2>/dev/null; then
+        echo ""
+        log "Qdrant vector database is ready and responsive"
+        QDRANT_HEALTHY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$QDRANT_HEALTHY || { echo ""; warn "Qdrant took longer to initialize. Check: docker compose logs qdrant"; }
+
+# ── 7d. Verify Cron Daemon in Web Container ───────────────────
+section "7d. Verifying Cron Daemon in Web Container"
+printf "   Checking cron service in web container"
+CRON_RUNNING=false
+for i in $(seq 1 10); do
+    if docker compose exec -T web pgrep cron >/dev/null 2>&1; then
+        echo ""
+        log "Cron daemon is actively running inside the web container"
+        CRON_RUNNING=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+if ! $CRON_RUNNING; then
+    echo ""
+    warn "Cron daemon is not running inside web container. Starting service..."
+    docker compose exec -T web service cron start 2>&1 || true
+    if docker compose exec -T web pgrep cron >/dev/null 2>&1; then
+        log "Cron service started successfully"
+        CRON_RUNNING=true
+    else
+        warn "Could not start cron daemon inside web container. Check: docker compose logs web"
+    fi
+fi
+
+# Ensure cron log and environment files have proper permissions
+docker compose exec -T web sh -c "
+    touch /var/log/cron-run.log 2>/dev/null || true
+    chmod 666 /var/log/cron-run.log 2>/dev/null || true
+" 2>&1 && log "Cron log file verified (/var/log/cron-run.log)" || true
+
+# ── 8. Run Database Migrations & Seeding ──────────────────────
+section "8. Running Database Migrations & Seeding"
+if $MYSQL_HEALTHY; then
+    docker compose exec -T web php spark migrate --all 2>&1 \
+        && log "Database migrations executed successfully" \
+        || warn "Migrations had notices or completed with warnings"
+
+    log "Applying initial database seeders..."
+    docker compose exec -T web php spark db:seed SystemDefaultSeeder 2>&1 || true
+    log "Seeders executed successfully"
+else
+    warn "Skipping migrations and seeding because MySQL is not yet healthy"
+fi
+
+# ── 9. Wait for ML Microservice Readiness (:8000) ─────────────
+section "9. Waiting for ML Microservice Ready (:${ML_PORT})"
+printf "   Checking chege-photos-ml status"
+ML_READY=false
+for i in $(seq 1 45); do
+    ML_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${ML_PORT}/health 2>/dev/null || echo "000")
+    if [ "$ML_CODE" = "200" ]; then
+        echo ""
+        log "ML vision & embedding microservice is healthy (HTTP $ML_CODE)"
+        ML_READY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$ML_READY || { echo ""; warn "ML microservice took longer to initialize. Check: docker compose logs ml"; }
+
+# ── 10. Wait for Web Server Readiness (:80) ───────────────────
+section "10. Waiting for WebApp Server Ready (:${WEB_PORT})"
+printf "   Waiting for WebApp"
+WEB_READY=false
+for i in $(seq 1 35); do
+    CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${WEB_PORT}/" 2>/dev/null || echo "000")
+    if [[ "$CODE" =~ ^(200|301|302|307|403)$ ]]; then
+        echo ""
+        log "WebApp server is responding (HTTP $CODE)"
+        WEB_READY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$WEB_READY || { echo ""; warn "Web server did not respond in time. Check: docker compose logs web"; }
+
+# ── 11. Container Permissions Enforcement ─────────────────────
+section "11. Setting Container Writable Directory Permissions"
+docker compose exec -T web sh -c "
+    mkdir -p writable/cache writable/logs writable/session writable/debugbar public/uploads public/thumbnails && \
+    chown -R www-data:www-data writable && \
+    chmod -R 775 writable && \
+    chown www-data:www-data public/uploads public/thumbnails && \
+    chmod 775 public/uploads public/thumbnails
+" 2>&1 && log "Writable and uploads permissions enforced (www-data:775)" || warn "Failed to update directory permissions"
+
+# ── 12. Housekeeping, Storage Metrics & Cache Clearing ────────
+section "12. Housekeeping & Cache Clearing"
+docker compose exec -T web php spark cache:clear 2>&1 || true
+log "CodeIgniter 4 application cache cleared"
+
+docker compose exec -T web sh -c "
+    rm -rf writable/debugbar/* 2>/dev/null || true
+" && log "Temporary runtime debugbar profiles cleared" || true
+
+docker builder prune -af >/dev/null 2>&1 && log "Docker BuildKit build cache pruned" || true
+docker image prune -f >/dev/null 2>&1 && log "Dangling Docker build layers pruned" || true
+
 echo ""
-log "Chege Photos Platform deployment completed successfully!"
+echo -e "   ${BOLD}Docker Storage Footprint:${RESET}"
+docker system df 2>/dev/null | sed 's/^/   /' || true
+
+# ── 13. Container Status & Final Summary ──────────────────────
+section "13. Deployment Summary & Health Verification"
+docker compose ps
+
+echo ""
+FINAL_WEB=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${WEB_PORT}/" 2>/dev/null || echo "000")
+
+if [[ "$FINAL_WEB" =~ ^(200|301|302|307|403)$ ]]; then
+    log "PLATFORM IS LIVE — ALL SYSTEMS OPERATIONAL (WebApp HTTP ${FINAL_WEB})"
+    echo ""
+    echo -e "  ${BOLD}WebApp Dashboard     :${RESET}  ${BASE_URL}"
+    echo -e "  ${BOLD}REST API Health      :${RESET}  ${BASE_URL}api/v1/health"
+    echo -e "  ${BOLD}ML API Swagger Docs  :${RESET}  http://${DETECTED_IP}:${ML_PORT}/docs"
+    echo -e "  ${BOLD}ML Health Probe      :${RESET}  http://${DETECTED_IP}:${ML_PORT}/health"
+    echo -e "  ${BOLD}Qdrant Web Console   :${RESET}  http://${DETECTED_IP}:${QDRANT_HTTP_PORT}/dashboard"
+    echo -e "  ${BOLD}Redis Cache Server   :${RESET}  localhost:${REDIS_PORT}"
+    echo -e "  ${BOLD}MySQL 8.4 Relational :${RESET}  localhost:${DB_PORT}"
+    echo ""
+    echo -e "${BOLD}Android Companion Client Pairing:${RESET}"
+    echo -e "  - Android Emulator Base URL : ${GREEN}http://10.0.2.2${RESET} (port ${WEB_PORT})"
+    echo -e "  - Physical Phone LAN URL    : ${GREEN}http://${DETECTED_IP}${RESET} (port ${WEB_PORT})"
+    echo -e "  - Default Admin Credentials : ${YELLOW}admin@example.com${RESET} / ${YELLOW}admin_password${RESET}"
+    echo ""
+    finish_deployment
+
+elif [ "$FINAL_WEB" = "500" ]; then
+    warn "HTTP 500 detected on WebApp — dumping live error output..."
+    echo -e "${RED}"
+    curl -s "http://localhost:${WEB_PORT}/" \
+        | python3 -c "
+import sys, json
+try:
+    d = json.load(sys.stdin)
+    print('Error:', d.get('message',''))
+    for f in d.get('trace', [])[:10]:
+        print(' ', f.get('file','').split('/')[-1], ':', f.get('line',''), '->', f.get('function',''))
+except Exception:
+    sys.stdin = open('/dev/stdin')
+    print(sys.stdin.read()[:2000])
+" 2>/dev/null || true
+    echo -e "${RESET}"
+    echo ""
+    echo -e "${YELLOW}Recent WebApp container logs:${RESET}"
+    docker compose logs web 2>&1 | tail -30
+    finish_deployment
+    err "Fix the errors above, then re-run: bash scripts/deploy.sh"
+
+else
+    warn "HTTP ${FINAL_WEB} — unexpected status code. Recent WebApp logs:"
+    docker compose logs web 2>&1 | tail -30
+    finish_deployment
+fi

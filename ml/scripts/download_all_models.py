@@ -25,10 +25,10 @@ except Exception:
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-def download_file_stream(url: str, dest: Path, description: str, max_retries: int = 3) -> bool:
-    """Download file in 1MB chunks with User-Agent header and retry logic."""
-    if dest.exists() and dest.stat().st_size > 100000:
-        log.info("✓ %s already present (%d bytes), skipping.", description, dest.stat().st_size)
+def download_file_stream(url: str, dest: Path, description: str, max_retries: int = 3, force: bool = False) -> bool:
+    """Download file in 1MB chunks with User-Agent header, speed tracking, and retry logic."""
+    if not force and dest.exists() and dest.stat().st_size > 100000:
+        log.info("✓ %s already present (%d MB), skipping.", description, dest.stat().st_size // 1048576)
         return True
 
     dest.parent.mkdir(parents=True, exist_ok=True)
@@ -37,6 +37,7 @@ def download_file_stream(url: str, dest: Path, description: str, max_retries: in
     for attempt in range(1, max_retries + 1):
         try:
             log.info("Downloading %s (Attempt %d/%d) from %s ...", description, attempt, max_retries, url)
+            start_time = time.time()
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
             with urllib.request.urlopen(req, timeout=120) as resp:
                 total_bytes = int(resp.headers.get("Content-Length", 0))
@@ -52,11 +53,15 @@ def download_file_stream(url: str, dest: Path, description: str, max_retries: in
                         if total_bytes > 0:
                             pct = int((downloaded / total_bytes) * 100)
                             if pct >= last_logged_pct + 25:
-                                log.info("  -> %s progress: %d%% (%d / %d MB)", description, pct, downloaded // 1048576, total_bytes // 1048576)
+                                elapsed = max(0.1, time.time() - start_time)
+                                speed_mb = (downloaded / 1048576) / elapsed
+                                log.info("  -> %s progress: %d%% (%d / %d MB @ %.1f MB/s)", description, pct, downloaded // 1048576, total_bytes // 1048576, speed_mb)
                                 last_logged_pct = pct
 
             temp_dest.rename(dest)
-            log.info("✓ %s downloaded successfully (%d bytes).", description, dest.stat().st_size)
+            elapsed_total = max(0.1, time.time() - start_time)
+            avg_speed = (dest.stat().st_size / 1048576) / elapsed_total
+            log.info("✓ %s downloaded successfully (%d MB @ %.1f MB/s in %.1fs).", description, dest.stat().st_size // 1048576, avg_speed, elapsed_total)
             return True
         except Exception as exc:
             log.warning("✗ Download attempt %d failed for %s: %s", attempt, description, exc)
@@ -133,8 +138,35 @@ def download_clip():
     except Exception as exc:
         log.warning("CLIP pre-download encountered non-fatal issue: %s. (Will download at runtime on first search)", exc)
 
+def verify_models() -> bool:
+    log.info("Verifying installed models in %s ...", MODELS_DIR)
+    det_onnx = MODELS_DIR / "insightface_models" / "models" / "buffalo_l" / "det_10g.onnx"
+    w600k_onnx = MODELS_DIR / "insightface_models" / "models" / "buffalo_l" / "w600k_r50.onnx"
+    yolo_dest = MODELS_DIR / "yolov8n.onnx"
+    nsfw_dest = MODELS_DIR / "open_nsfw.onnx"
+
+    status = {
+        "InsightFace Det (det_10g.onnx)": det_onnx.exists() and det_onnx.stat().st_size > 1000000,
+        "InsightFace Rec (w600k_r50.onnx)": w600k_onnx.exists() and w600k_onnx.stat().st_size > 10000000,
+        "YOLOv8 Nano (yolov8n.onnx)": yolo_dest.exists() and yolo_dest.stat().st_size > 1000000,
+        "OpenNSFW (open_nsfw.onnx)": nsfw_dest.exists() and nsfw_dest.stat().st_size > 1000000,
+    }
+    all_ok = True
+    for name, ok in status.items():
+        if ok:
+            log.info("✓ %s: Present & Valid", name)
+        else:
+            log.warning("✗ %s: Missing or Incomplete", name)
+            all_ok = False
+    return all_ok
+
 def main():
-    log.info("Starting build-time pre-download of ML models...")
+    args = sys.argv[1:]
+    if "--verify" in args or "--verify-only" in args:
+        ok = verify_models()
+        sys.exit(0 if ok else 1)
+
+    log.info("Starting build-time pre-download of ML models into %s ...", MODELS_DIR)
     try:
         download_insightface()
     except Exception as e:
@@ -160,6 +192,7 @@ def main():
     gc.collect()
 
     log.info("Build-time model download stage finished.")
+    verify_models()
     sys.exit(0)
 
 if __name__ == "__main__":
