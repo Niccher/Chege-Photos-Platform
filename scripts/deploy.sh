@@ -208,29 +208,32 @@ if [ ! -f ".env" ]; then
         || err ".env missing and no .env.example found — cannot continue"
 fi
 
+get_env() {
+    local K="$1" DEFAULT="$2"
+    local VAL
+    VAL=$(grep -E "^${K}\s*=" .env 2>/dev/null | head -n1 | cut -d'=' -f2- | tr -d '[:space:]' || true)
+    echo "${VAL:-$DEFAULT}"
+}
+
 set_env() {
-    local K="$1" V="$2"
-    if grep -q "^${K}=" .env; then
+    local K="$1"
+    local V
+    V=$(echo "$2" | head -n1 | tr -d '\r\n')
+    if grep -q "^${K}=" .env 2>/dev/null; then
         sed -i "s|^${K}=.*|${K}=${V}|g" .env
-    elif grep -q "^${K} *=" .env; then
+    elif grep -q "^${K} *=" .env 2>/dev/null; then
         sed -i "s|^${K} *=.*|${K} = ${V}|g" .env
     else
         echo "${K}=${V}" >> .env
     fi
 }
 
-WEB_PORT=$(grep "^WEB_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "80")
-[ -z "$WEB_PORT" ] && WEB_PORT="80"
-ML_PORT=$(grep "^ML_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "8000")
-[ -z "$ML_PORT" ] && ML_PORT="8000"
-DB_PORT=$(grep "^DB_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "3306")
-[ -z "$DB_PORT" ] && DB_PORT="3306"
-REDIS_PORT=$(grep "^REDIS_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "6379")
-[ -z "$REDIS_PORT" ] && REDIS_PORT="6379"
-QDRANT_HTTP_PORT=$(grep "^QDRANT_HTTP_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "6333")
-[ -z "$QDRANT_HTTP_PORT" ] && QDRANT_HTTP_PORT="6333"
-QDRANT_GRPC_PORT=$(grep "^QDRANT_GRPC_PORT" .env 2>/dev/null | cut -d'=' -f2 | tr -d ' ' || echo "6334")
-[ -z "$QDRANT_GRPC_PORT" ] && QDRANT_GRPC_PORT="6334"
+WEB_PORT=$(get_env "WEB_PORT" "80")
+ML_PORT=$(get_env "ML_PORT" "8000")
+DB_PORT=$(get_env "DB_PORT" "3306")
+REDIS_PORT=$(get_env "REDIS_PORT" "6379")
+QDRANT_HTTP_PORT=$(get_env "QDRANT_HTTP_PORT" "6333")
+QDRANT_GRPC_PORT=$(get_env "QDRANT_GRPC_PORT" "6334")
 
 # Format baseURL cleanly (omit :80 if standard HTTP)
 if [ "$WEB_PORT" = "80" ]; then
