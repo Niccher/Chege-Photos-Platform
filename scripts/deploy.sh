@@ -30,6 +30,10 @@
 # =============================================================
 set -euo pipefail
 
+# Enable Docker BuildKit parallel multi-stage acceleration
+export DOCKER_BUILDKIT=1
+export COMPOSE_DOCKER_CLI_BUILD=1
+
 # ── Colors & Formatting ───────────────────────────────────────
 GREEN="\033[0;32m"; YELLOW="\033[1;33m"; RED="\033[0;31m"
 CYAN="\033[0;36m"; BOLD="\033[1m"; RESET="\033[0m"
@@ -174,7 +178,12 @@ log "Old container instances stopped."
 
 # ── 6. Build & Start All Containers ───────────────────────────
 section "6. Building & Starting All Containers"
-docker compose up --build -d
+BUILD_FLAG="--build"
+if [ "${1:-}" = "--fast" ] || [ "${1:-}" = "--no-build" ]; then
+    BUILD_FLAG=""
+    log "Fast startup mode active (skipping image rebuild)."
+fi
+docker compose up $BUILD_FLAG -d
 log "Container orchestration launched."
 
 # ── 7. Wait for MySQL Health (:3306) ──────────────────────────
@@ -186,8 +195,8 @@ while [ $MYSQL_WAIT -lt $MYSQL_MAX ]; do
         log "MySQL is healthy and accepting connections!"
         break
     fi
-    sleep 2
-    MYSQL_WAIT=$((MYSQL_WAIT + 2))
+    sleep 1
+    MYSQL_WAIT=$((MYSQL_WAIT + 1))
 done
 if [ $MYSQL_WAIT -ge $MYSQL_MAX ]; then
     err "Timed out waiting for MySQL container to become healthy."
@@ -218,8 +227,8 @@ while [ $QDRANT_WAIT -lt $QDRANT_MAX ]; do
         log "Qdrant vector engine is ready!"
         break
     fi
-    sleep 2
-    QDRANT_WAIT=$((QDRANT_WAIT + 2))
+    sleep 1
+    QDRANT_WAIT=$((QDRANT_WAIT + 1))
 done
 if [ $QDRANT_WAIT -ge $QDRANT_MAX ]; then
     warn "Qdrant health check timed out. Service may be initializing data storage."
@@ -234,8 +243,8 @@ while [ $ML_WAIT -lt $ML_MAX ]; do
         log "ML FastAPI microservice is ready and online!"
         break
     fi
-    sleep 2
-    ML_WAIT=$((ML_WAIT + 2))
+    sleep 1
+    ML_WAIT=$((ML_WAIT + 1))
 done
 if [ $ML_WAIT -ge $ML_MAX ]; then
     warn "ML service readiness check timed out. PyTorch weights might still be downloading."
@@ -251,8 +260,8 @@ while [ $WEB_WAIT -lt $WEB_MAX ]; do
         log "WebApp Apache/PHP server returned HTTP $HTTP_STATUS!"
         break
     fi
-    sleep 2
-    WEB_WAIT=$((WEB_WAIT + 2))
+    sleep 1
+    WEB_WAIT=$((WEB_WAIT + 1))
 done
 if [ $WEB_WAIT -ge $WEB_MAX ]; then
     warn "WebApp server readiness check timed out (status: ${HTTP_STATUS})."
@@ -266,9 +275,10 @@ docker compose exec -T web mkdir -p /var/www/html/writable/cache \
                                     /var/www/html/writable/uploads \
                                     /var/www/html/public/uploads \
                                     /var/www/html/public/thumbnails 2>/dev/null || true
-docker compose exec -T web chmod -R 777 /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
-docker compose exec -T web chown -R www-data:www-data /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
-log "Directory permissions enforced for Apache www-data."
+docker compose exec -T web chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
+docker compose exec -T web chown www-data:www-data /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
+docker compose exec -T web chmod 775 /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
+log "Directory permissions verified for Apache www-data."
 
 # ── 13. Deployment Summary & Health Verification ──────────────
 section "13. Deployment Summary & Endpoint Matrix"

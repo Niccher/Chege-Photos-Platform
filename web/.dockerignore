@@ -25,3 +25,25 @@ dist/
 
 # OS
 .DS_Store
+
+# Media Uploads & Thumbnails (Do not send gigabytes of user photos into Docker build context)
+public/uploads/*
+!public/uploads/.gitkeep
+public/thumbnails/*
+!public/thumbnails/.gitkeep
+
+# Runtime writable directories
+writable/cache/*
+!writable/cache/.gitkeep
+writable/logs/*
+!writable/logs/.gitkeep
+writable/session/*
+!writable/session/.gitkeep
+writable/debugbar/*
+writable/uploads/*
+
+# Test suites & artifacts
+tests/
+phpunit.xml*
+.phpunit.cache/
+*.log

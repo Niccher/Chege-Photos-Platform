@@ -26,6 +26,13 @@ build/
 dist/
 models/
 *.onnx
+*.tmp
+*.zip
+
+# Tests & Logs
+tests/
+.pytest_cache/
+*.log
 
 # OS
 .DS_Store

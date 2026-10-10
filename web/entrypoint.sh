@@ -25,16 +25,18 @@ if [ -d "/data" ]; then
         rm -rf /var/www/html/public/thumbnails
         ln -sfn /data/thumbnails /var/www/html/public/thumbnails
     fi
-    chmod -R 777 /data
-    chown -R www-data:www-data /data || true
+    chmod 775 /data 2>/dev/null || true
+    chown www-data:www-data /data 2>/dev/null || true
 fi
 
-chmod -R 777 /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails
-chown -R www-data:www-data /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails || true
+# Directory-level permissions (non-recursive to avoid freezing container startup on large media libraries)
+chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
+chown www-data:www-data /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
+chmod 775 /var/www/html/public/uploads /var/www/html/public/thumbnails 2>/dev/null || true
 
-# Wait for MySQL to be fully ready (beyond just ping)
-echo "Waiting for MySQL to accept connections..."
-max_retries=30
+# Wait for MySQL to accept connections (fast poll: Compose already verified container health)
+echo "Verifying MySQL connection..."
+max_retries=15
 count=0
 while ! php -r '$h=getenv("database.default.hostname")?:(getenv("database_default_hostname")?:(getenv("DB_HOST")?:(getenv("MYSQLHOST")?:"mysql"))); $pt=getenv("database.default.port")?:(getenv("database_default_port")?:(getenv("DB_PORT")?:(getenv("MYSQLPORT")?:"3306"))); $u=getenv("database.default.username")?:(getenv("database_default_username")?:(getenv("DB_USER")?:(getenv("MYSQLUSER")?:"root"))); $p=getenv("database.default.password")?:(getenv("database_default_password")?:(getenv("DB_PASS")?:(getenv("MYSQLPASSWORD")?:"root_password"))); new PDO("mysql:host={$h};port={$pt}", $u, $p);' 2>/dev/null; do
     count=$((count + 1))
@@ -42,22 +44,20 @@ while ! php -r '$h=getenv("database.default.hostname")?:(getenv("database_defaul
         echo "ERROR: MySQL did not become ready in time. Starting Apache without migrations."
         exec apache2-foreground
     fi
-    echo "MySQL not ready yet... retrying ($count/$max_retries)"
-    sleep 2
+    echo "MySQL connection warming up... ($count/$max_retries)"
+    sleep 1
 done
 
-echo "MySQL is ready!"
+echo "MySQL connection confirmed!"
 
 # Run migrations (safe to run multiple times — only applies pending migrations)
 echo "Running database migrations..."
-echo "DEBUG - MYSQLHOST is: '${MYSQLHOST}'"
 cd /var/www/html
 CI_ENVIRONMENT=development php spark migrate --all || { echo "FATAL ERROR: Migrations failed. See above for details."; exit 1; }
 CI_ENVIRONMENT=development php spark db:seed SystemDefaultSeeder || echo "WARNING: System default seeding skipped."
 
-# Fix permissions again after CLI commands (which run as root) might have created new files
-chown -R www-data:www-data /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails || true
-chmod -R 777 /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails
+# Re-enforce writable permissions after CLI root execution (targeted to writable only)
+chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
 
 # Setup container cron jobs
 echo "Configuring container cron schedules..."

@@ -1,24 +1,19 @@
 # syntax=docker/dockerfile:1
 FROM php:8.3-apache
 
-# ── System dependencies ────────────────────────────────────────────────────────
+# ── Fast PHP extension installer (downloads optimized pre-compiled binaries) ──
+COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
+
+# ── System dependencies & PHP extensions ──────────────────────────────────────
 RUN apt-get update && apt-get install -y --no-install-recommends \
-        libicu-dev \
-        libzip-dev \
-        libpng-dev \
-        libjpeg-dev \
-        libfreetype6-dev \
-        zip \
-        unzip \
         cron \
         ffmpeg \
         libheif-examples \
-    && docker-php-ext-configure gd --with-freetype --with-jpeg \
-    && docker-php-ext-install -j$(nproc) intl mysqli pdo_mysql zip gd exif \
-    && pecl install redis && docker-php-ext-enable redis
-
-# Enable Apache rewrite module
-RUN a2enmod rewrite headers
+        zip \
+        unzip \
+    && install-php-extensions intl mysqli pdo_mysql zip gd exif redis \
+    && rm -rf /var/lib/apt/lists/* \
+    && a2enmod rewrite headers
 
 # PHP upload & memory limits (PHP_INI_PERDIR — must be set in an ini file, not at runtime)
 RUN { \
@@ -49,9 +44,13 @@ RUN composer install --no-dev --optimize-autoloader --no-interaction --prefer-di
 # ── Application code ──────────────────────────────────────────────────────────
 COPY . /var/www/html
 
-RUN mkdir -p /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails \
+RUN mkdir -p /var/www/html/writable/cache \
+             /var/www/html/writable/logs \
+             /var/www/html/writable/session \
+             /var/www/html/public/uploads \
+             /var/www/html/public/thumbnails \
     && chown -R www-data:www-data /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails \
-    && chmod -R 777 /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails
+    && chmod -R 775 /var/www/html/writable /var/www/html/public/uploads /var/www/html/public/thumbnails
 
 COPY entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod +x /usr/local/bin/entrypoint.sh
