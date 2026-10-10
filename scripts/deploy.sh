@@ -279,13 +279,22 @@ log "Old containers stopped and explicit name conflicts cleared"
 
 # ── 6. Build & Start Containers ───────────────────────────────
 section "6. Building & Starting All Containers"
-BUILD_FLAG="--build"
 if [ "${1:-}" = "--fast" ] || [ "${1:-}" = "--no-build" ]; then
-    BUILD_FLAG=""
-    log "Fast startup mode active (skipping image rebuild)."
-fi
+    log "Fast startup mode active (skipping image rebuild)..."
+    docker compose up -d
+else
+    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant)..."
+    docker compose pull mysql redis qdrant 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
 
-docker compose up $BUILD_FLAG -d 2>&1 | tail -25
+    log "Building Web application container (PHP 8.3 + Apache)..."
+    docker compose build --progress=plain web
+
+    log "Building ML microservice container (FastAPI + Vision models)..."
+    docker compose build --progress=plain ml
+
+    log "Starting multi-container stack in background..."
+    docker compose up -d
+fi
 log "Containers created and started (mysql, redis, qdrant, web, ml)"
 
 echo ""
