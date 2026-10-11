@@ -50,18 +50,41 @@ done
 
 echo "MySQL connection confirmed!"
 
+# Verify vendor/ integrity before invoking spark — emergency composer install if Shield or core packages are absent
+echo "Verifying Composer vendor integrity..."
+if [ ! -f "/var/www/html/vendor/autoload.php" ] \
+    || [ ! -d "/var/www/html/vendor/codeigniter4/shield" ]; then
+    echo "WARNING: vendor/ missing or incomplete (Shield not found). Running emergency composer install..."
+    cd /var/www/html
+    composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist 2>&1 \
+        || echo "WARNING: composer install encountered errors. Check logs."
+else
+    echo "Vendor integrity OK."
+fi
+
 # Run migrations (safe to run multiple times — only applies pending migrations)
 echo "Running database migrations..."
 cd /var/www/html
-CI_ENVIRONMENT=development php spark migrate --all || { echo "FATAL ERROR: Migrations failed. See above for details."; exit 1; }
-CI_ENVIRONMENT=development php spark db:seed SystemDefaultSeeder || echo "WARNING: System default seeding skipped."
+MIGRATION_FAILED=0
+if ! CI_ENVIRONMENT=development php spark migrate --all; then
+    echo "=========================================="
+    echo "WARNING: Migrations failed. Apache will"
+    echo "still start. Check logs and fix manually:"
+    echo "  docker compose logs web"
+    echo "  docker exec chege-photos-web php spark migrate:status"
+    echo "=========================================="
+    MIGRATION_FAILED=1
+fi
+if [ "$MIGRATION_FAILED" -eq 0 ]; then
+    CI_ENVIRONMENT=development php spark db:seed SystemDefaultSeeder || echo "WARNING: System default seeding skipped."
+fi
 
 # Re-enforce writable permissions after CLI root execution (targeted to writable only)
 chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
 
 # Setup container cron jobs
 echo "Configuring container cron schedules..."
-printenv | grep -E '^(MYSQL|DB_|CI_|PORT|APACHE|ML_|QDRANT_|RAILWAY)' > /etc/environment || true
+printenv | grep -E '^(MYSQL|DB_|CI_|PORT|APACHE|ML_|QDRANT_|RAILWAY|REDIS_|APP_|encryption\.|app\.)' > /etc/environment || true
 
 cat << 'EOF' > /etc/cron.d/photos-cron
 # Run master task scheduler every minute with environment loaded

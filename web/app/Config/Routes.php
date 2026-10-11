@@ -275,4 +275,8 @@ $routes->get('uploads/(:any)', 'MediaFallback::serveUpload/$1');
 $routes->get('thumbnails/(:any)', 'MediaFallback::serveThumbnail/$1');
 
 // Shield's auth routes (login, register, magic-link, etc.)
-service('auth')->routes($routes);
+// Guard against null in case Shield cannot initialize (e.g. CLI/spark boot context)
+$auth = service('auth');
+if ($auth !== null) {
+    $auth->routes($routes);
+}
