@@ -103,8 +103,12 @@ echo ""
 # ── 3. OpenNSFW ResNet-50 Classifier ──────────────────────────
 echo -e "${BOLD}3/4. OpenNSFW ResNet-50 Classifier Model${RESET}"
 NSFW_DEST="${MODELS_DIR}/open_nsfw.onnx"
-NSFW_URL="https://raw.githubusercontent.com/bhky/opennsfw2/master/opennsfw2/data/open_nsfw-90be3a4a.onnx"
-download_file "$NSFW_URL" "$NSFW_DEST" "OpenNSFW ResNet-50 ONNX" 50000000
+NSFW_URL="https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/open_nsfw.onnx"
+NSFW_FALLBACK_URL="https://huggingface.co/ninjawick/webui-faceswap-unlocked/resolve/main/open_nsfw.onnx"
+if ! download_file "$NSFW_URL" "$NSFW_DEST" "OpenNSFW ResNet-50 ONNX" 10000000; then
+    warn "Primary source failed; attempting Hugging Face fallback mirror..."
+    download_file "$NSFW_FALLBACK_URL" "$NSFW_DEST" "OpenNSFW ResNet-50 ONNX (Fallback)" 10000000
+fi
 echo ""
 
 # ── 4. CLIP Transformer ───────────────────────────────────────

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import gc
+import shutil
 import logging
 import urllib.request
 from abc import ABC, abstractmethod
@@ -17,7 +18,11 @@ from app.config import settings
 log = logging.getLogger("ml_chege_photos.nsfw")
 
 OPENNSFW_ONNX_PATH = Path("/app/models/open_nsfw.onnx")
-OPENNSFW_DOWNLOAD_URL = "https://raw.githubusercontent.com/bhky/opennsfw2/master/opennsfw2/data/open_nsfw-90be3a4a.onnx"
+OPENNSFW_DOWNLOAD_URLS = [
+    "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/open_nsfw.onnx",
+    "https://huggingface.co/ninjawick/webui-faceswap-unlocked/resolve/main/open_nsfw.onnx",
+]
+OPENNSFW_DOWNLOAD_URL = OPENNSFW_DOWNLOAD_URLS[0]
 
 _active_model_name: str | None = None
 _cached_detector: Optional["BaseNSFWDetector"] = None
@@ -52,21 +57,29 @@ def ensure_opennsfw_onnx_present() -> Path:
         if data_dir.exists():
             for f in data_dir.glob("*.onnx"):
                 if f.is_file() and f.stat().st_size > 1000000:
-                    import shutil
                     shutil.copy2(f, OPENNSFW_ONNX_PATH)
                     log.info("Copied opennsfw2 ONNX model from package data: %s -> %s", f, OPENNSFW_ONNX_PATH)
                     return OPENNSFW_ONNX_PATH
     except Exception as e:
         log.debug("Could not copy from opennsfw2 package data: %s", e)
 
-    # 2. Download from official repository
-    log.info("Downloading OpenNSFW ONNX model (~6.2 MB) from %s ...", OPENNSFW_DOWNLOAD_URL)
-    try:
-        urllib.request.urlretrieve(OPENNSFW_DOWNLOAD_URL, str(OPENNSFW_ONNX_PATH))
-        log.info("OpenNSFW ONNX model downloaded successfully to %s", OPENNSFW_ONNX_PATH)
-    except Exception as exc:
-        log.error("Failed to download OpenNSFW ONNX model: %s", exc)
+    # 2. Download from remote repository with User-Agent and fallback
+    user_agent = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    for url in OPENNSFW_DOWNLOAD_URLS:
+        log.info("Downloading OpenNSFW ONNX model (~23.6 MB) from %s ...", url)
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": user_agent})
+            with urllib.request.urlopen(req, timeout=120) as resp, open(OPENNSFW_ONNX_PATH, "wb") as out_f:
+                shutil.copyfileobj(resp, out_f)
+            if OPENNSFW_ONNX_PATH.exists() and OPENNSFW_ONNX_PATH.stat().st_size > 1000000:
+                log.info("OpenNSFW ONNX model downloaded successfully to %s", OPENNSFW_ONNX_PATH)
+                return OPENNSFW_ONNX_PATH
+        except Exception as exc:
+            log.warning("Download failed for OpenNSFW ONNX from %s: %s", url, exc)
+            if OPENNSFW_ONNX_PATH.exists():
+                OPENNSFW_ONNX_PATH.unlink(missing_ok=True)
 
+    log.error("Failed to acquire OpenNSFW ONNX model from all sources.")
     return OPENNSFW_ONNX_PATH
 
 

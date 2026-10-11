@@ -119,8 +119,14 @@ def download_opennsfw():
     except Exception as e:
         log.debug("Package copy skipped: %s", e)
 
-    nsfw_url = "https://raw.githubusercontent.com/bhky/opennsfw2/master/opennsfw2/data/open_nsfw-90be3a4a.onnx"
-    download_file_stream(nsfw_url, nsfw_dest, "OpenNSFW ONNX")
+    nsfw_urls = [
+        "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/open_nsfw.onnx",
+        "https://huggingface.co/ninjawick/webui-faceswap-unlocked/resolve/main/open_nsfw.onnx",
+    ]
+    for url in nsfw_urls:
+        if download_file_stream(url, nsfw_dest, "OpenNSFW ONNX"):
+            return
+    log.error("Failed to download OpenNSFW ONNX from all available sources.")
 
 def download_clip():
     log.info("── 4/4: CLIP Transformer (openai/clip-vit-base-patch32) ──")
