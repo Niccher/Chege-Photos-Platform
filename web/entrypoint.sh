@@ -1,6 +1,24 @@
 #!/bin/bash
 set -e
 
+# ── Self-healing vendor dependency restoration ────────────────────────────────
+# If host volume shadowing or an empty volume mount hides vendor/, restore from /opt/vendor
+if [ ! -f "/var/www/html/vendor/autoload.php" ] || [ ! -d "/var/www/html/vendor/codeigniter4/shield" ]; then
+    if [ -d "/opt/vendor" ]; then
+        echo "Restoring baked-in Composer vendor dependencies from /opt/vendor into /var/www/html/vendor..."
+        mkdir -p /var/www/html/vendor
+        cp -a /opt/vendor/. /var/www/html/vendor/
+        echo "Composer vendor dependencies restored successfully."
+    else
+        echo "WARNING: /opt/vendor not found. Attempting emergency composer install..."
+        cd /var/www/html
+        composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist 2>&1 \
+            || echo "WARNING: composer install encountered errors."
+    fi
+else
+    echo "Vendor integrity OK."
+fi
+
 # Initialize CodeIgniter writable directories (handles cases where a volume is mounted and empty)
 echo "Ensuring writable directories exist and have correct permissions..."
 mkdir -p /var/www/html/writable/cache \
@@ -50,18 +68,6 @@ done
 
 echo "MySQL connection confirmed!"
 
-# Verify vendor/ integrity before invoking spark — emergency composer install if Shield or core packages are absent
-echo "Verifying Composer vendor integrity..."
-if [ ! -f "/var/www/html/vendor/autoload.php" ] \
-    || [ ! -d "/var/www/html/vendor/codeigniter4/shield" ]; then
-    echo "WARNING: vendor/ missing or incomplete (Shield not found). Running emergency composer install..."
-    cd /var/www/html
-    composer install --no-dev --optimize-autoloader --no-interaction --prefer-dist 2>&1 \
-        || echo "WARNING: composer install encountered errors. Check logs."
-else
-    echo "Vendor integrity OK."
-fi
-
 # Run migrations (safe to run multiple times — only applies pending migrations)
 echo "Running database migrations..."
 cd /var/www/html
@@ -84,6 +90,8 @@ chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
 
 # Setup container cron jobs
 echo "Configuring container cron schedules..."
+printenv | sed 's/^\(.*\)=\(.*\)$/export \1="\2"/' > /var/www/html/writable/cron_env.sh 2>/dev/null || true
+chmod 0644 /var/www/html/writable/cron_env.sh 2>/dev/null || true
 printenv | grep -E '^(MYSQL|DB_|CI_|PORT|APACHE|ML_|QDRANT_|RAILWAY|REDIS_|APP_|encryption\.|app\.)' > /etc/environment || true
 
 cat << 'EOF' > /etc/cron.d/photos-cron
@@ -100,12 +108,14 @@ chmod 0666 /var/log/cron-run.log
 echo "Starting cron service..."
 service cron start || cron || echo "WARNING: Could not start cron daemon."
 
-# Force remove conflicting MPMs just in case they were pulled in by a package update
-echo "Cleaning up conflicting Apache MPMs..."
+# Force remove conflicting MPMs and ensure mpm_prefork is active
+echo "Configuring Apache MPM..."
+a2dismod mpm_event mpm_worker 2>/dev/null || true
+a2enmod mpm_prefork 2>/dev/null || true
 rm -f /etc/apache2/mods-enabled/mpm_event.load \
       /etc/apache2/mods-enabled/mpm_event.conf \
       /etc/apache2/mods-enabled/mpm_worker.load \
-      /etc/apache2/mods-enabled/mpm_worker.conf
+      /etc/apache2/mods-enabled/mpm_worker.conf 2>/dev/null || true
 
 # Pre-warm lightweight thumbnails from GCP in background (non-blocking for instant Apache boot)
 echo "Triggering background thumbnail pre-warming from GCP..."

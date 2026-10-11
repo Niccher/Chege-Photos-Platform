@@ -90,6 +90,7 @@ services:
       REDIS_PORT: 6379
     volumes:
       - ./web:/var/www/html
+      - web-vendor:/var/www/html/vendor
     depends_on:
       mysql:
         condition: service_healthy
@@ -166,6 +167,7 @@ volumes:
   qdrant_data:
   insightface_models:
   redis-data:
+  web-vendor:
 
 networks:
   chege-network:

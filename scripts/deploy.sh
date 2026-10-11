@@ -105,12 +105,16 @@ finish_deployment() {
 
 # ── 1. Detect Dynamic IP ──────────────────────────────────────
 section "1. Detecting Dynamic IP"
-DETECTED_IP=$(curl -s --max-time 5 ip.me 2>/dev/null | tr -d '[:space:]' || true)
+# Fast path: Query Google Cloud internal metadata server (1ms response on GCP VM)
+DETECTED_IP=$(curl -s -m 2 -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/network-interfaces/0/access-configs/0/external-ip" 2>/dev/null | tr -d '[:space:]' || true)
 if [ -z "$DETECTED_IP" ]; then
-    DETECTED_IP=$(curl -s --max-time 5 ifconfig.me 2>/dev/null | tr -d '[:space:]' || true)
+    DETECTED_IP=$(curl -s --max-time 3 ip.me 2>/dev/null | tr -d '[:space:]' || true)
 fi
 if [ -z "$DETECTED_IP" ]; then
-    DETECTED_IP=$(curl -s --max-time 5 icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
+    DETECTED_IP=$(curl -s --max-time 3 ifconfig.me 2>/dev/null | tr -d '[:space:]' || true)
+fi
+if [ -z "$DETECTED_IP" ]; then
+    DETECTED_IP=$(curl -s --max-time 3 icanhazip.com 2>/dev/null | tr -d '[:space:]' || true)
 fi
 if [ -z "$DETECTED_IP" ]; then
     DETECTED_IP=$(hostname -I 2>/dev/null | awk '{print $1}' | tr -d '[:space:]' || true)
@@ -287,10 +291,10 @@ else
     docker compose pull mysql redis qdrant 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
 
     log "Building Web application container (PHP 8.3 + Apache)..."
-    docker compose build --progress=plain web
+    docker compose --progress=plain build web
 
     log "Building ML microservice container (FastAPI + Vision models)..."
-    docker compose build --progress=plain ml
+    docker compose --progress=plain build ml
 
     log "Starting multi-container stack in background..."
     docker compose up -d
