@@ -235,6 +235,9 @@ set_env() {
 WEB_PORT=$(get_env "WEB_PORT" "80")
 ML_PORT=$(get_env "ML_PORT" "8000")
 DB_PORT=$(get_env "DB_PORT" "3306")
+DB_NAME=$(get_env "DB_NAME" "db_chege_photos")
+DB_USER=$(get_env "DB_USER" "root")
+DB_ROOT_PASSWORD=$(get_env "DB_ROOT_PASSWORD" "root_password")
 REDIS_PORT=$(get_env "REDIS_PORT" "6379")
 QDRANT_HTTP_PORT=$(get_env "QDRANT_HTTP_PORT" "6333")
 QDRANT_GRPC_PORT=$(get_env "QDRANT_GRPC_PORT" "6334")
@@ -249,6 +252,9 @@ fi
 set_env "WEB_PORT" "$WEB_PORT"
 set_env "ML_PORT" "$ML_PORT"
 set_env "DB_PORT" "$DB_PORT"
+set_env "DB_NAME" "$DB_NAME"
+set_env "DB_USER" "$DB_USER"
+set_env "DB_ROOT_PASSWORD" "$DB_ROOT_PASSWORD"
 set_env "REDIS_PORT" "$REDIS_PORT"
 set_env "QDRANT_HTTP_PORT" "$QDRANT_HTTP_PORT"
 set_env "QDRANT_GRPC_PORT" "$QDRANT_GRPC_PORT"
@@ -494,19 +500,23 @@ if [[ "$FINAL_WEB" =~ ^(200|301|302|307|403)$ ]]; then
 elif [ "$FINAL_WEB" = "500" ]; then
     warn "HTTP 500 detected on WebApp — dumping live error output..."
     echo -e "${RED}"
-    curl -s "http://localhost:${WEB_PORT}/" \
-        | python3 -c "
+    OUTPUT=$(curl -s "http://localhost:${WEB_PORT}/" 2>/dev/null || true)
+    echo "$OUTPUT" | python3 -c "
 import sys, json
+raw = sys.stdin.read()
 try:
-    d = json.load(sys.stdin)
+    d = json.loads(raw)
     print('Error:', d.get('message',''))
     for f in d.get('trace', [])[:10]:
         print(' ', f.get('file','').split('/')[-1], ':', f.get('line',''), '->', f.get('function',''))
 except Exception:
-    sys.stdin = open('/dev/stdin')
-    print(sys.stdin.read()[:2000])
+    clean = '\n'.join([line for line in raw.splitlines() if line.strip()][:30])
+    print(clean[:2000] if clean else '(No response body)')
 " 2>/dev/null || true
     echo -e "${RESET}"
+    echo ""
+    echo -e "${YELLOW}Recent CodeIgniter error logs from container:${RESET}"
+    docker compose exec -T web sh -c "tail -n 40 /var/www/html/writable/logs/log-*.log 2>/dev/null || true" 2>/dev/null || true
     echo ""
     echo -e "${YELLOW}Recent WebApp container logs:${RESET}"
     docker compose logs web 2>&1 | tail -30

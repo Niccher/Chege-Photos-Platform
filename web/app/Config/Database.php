@@ -210,7 +210,7 @@ class Database extends Config
         if ($pass = getenv('MYSQLPASSWORD') ?: getenv('DB_PASS') ?: 'root_password') {
             $this->default['password'] = $pass;
         }
-        if ($db = getenv('MYSQLDATABASE') ?: getenv('DB_NAME') ?: 'railway') {
+        if ($db = getenv('MYSQLDATABASE') ?: getenv('DB_NAME') ?: 'db_chege_photos') {
             $this->default['database'] = $db;
         }
         if ($port = getenv('MYSQLPORT') ?: getenv('DB_PORT')) {

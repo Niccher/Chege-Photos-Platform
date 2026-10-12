@@ -84,6 +84,16 @@ services:
       - "${WEB_PORT:-80}:80"
     environment:
       CI_ENVIRONMENT: ${CI_ENVIRONMENT:-development}
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: root
+      DB_PASS: ${DB_ROOT_PASSWORD:-root_password}
+      DB_NAME: ${DB_NAME:-db_chege_photos}
+      database.default.hostname: mysql
+      database.default.database: ${DB_NAME:-db_chege_photos}
+      database.default.username: root
+      database.default.password: ${DB_ROOT_PASSWORD:-root_password}
+      database.default.port: 3306
       ML_URL: ${ML_URL:-http://ml:8000}
       ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
       REDIS_HOST: redis

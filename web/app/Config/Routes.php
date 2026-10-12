@@ -9,6 +9,13 @@ use CodeIgniter\Router\RouteCollection;
 // All app routes require an authenticated session
 // API Auth
 $routes->get('test-ping', 'TestAuth::ping', ['filter' => null]);
+$routes->get('api/v1/health', function() {
+    return response()->setJSON([
+        'status'  => 'ok',
+        'service' => 'web',
+        'version' => 'v1',
+    ]);
+});
 $routes->get('api/v1/test', function() { return 'API is working'; });
 $routes->get('api/v1/test2', 'Api\TestController::counts');
 $routes->post('api/v1/login', 'Api\Auth::login');
