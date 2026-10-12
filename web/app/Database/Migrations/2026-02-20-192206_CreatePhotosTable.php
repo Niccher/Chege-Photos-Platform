@@ -8,6 +8,10 @@ class CreatePhotosTable extends Migration
 {
     public function up()
     {
+        if ($this->db->tableExists('tbl_photos')) {
+            return;
+        }
+
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -131,7 +135,7 @@ class CreatePhotosTable extends Migration
         ]);
         $this->forge->addKey('id', true);
         $this->forge->addForeignKey('user_id', 'users', 'id', 'CASCADE', 'CASCADE');
-        $this->forge->createTable('tbl_photos');
+        $this->forge->createTable('tbl_photos', true);
     }
 
     public function down()

@@ -8,6 +8,10 @@ class CreatePhotoSharesTable extends Migration
 {
     public function up()
     {
+        if ($this->db->tableExists('tbl_photo_shares')) {
+            return;
+        }
+
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -45,7 +49,7 @@ class CreatePhotoSharesTable extends Migration
         $this->forge->addForeignKey('photo_id', 'tbl_photos', 'id', 'CASCADE', 'CASCADE');
         $this->forge->addForeignKey('shared_by', 'users', 'id', 'CASCADE', 'CASCADE');
         $this->forge->addForeignKey('shared_with', 'users', 'id', 'CASCADE', 'CASCADE');
-        $this->forge->createTable('tbl_photo_shares');
+        $this->forge->createTable('tbl_photo_shares', true);
     }
 
     public function down()

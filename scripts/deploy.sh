@@ -408,6 +408,26 @@ if $MYSQL_HEALTHY; then
     log "Applying initial database seeders..."
     docker compose exec -T web php spark db:seed SystemDefaultSeeder 2>&1 || true
     log "Seeders executed successfully"
+
+    # Ensure session table exists if not already created
+    docker compose exec -T web php -r '
+$h = getenv("DB_HOST") ?: "mysql";
+$pt = getenv("DB_PORT") ?: "3306";
+$u = getenv("DB_USER") ?: "root";
+$p = getenv("DB_PASS") ?: "root_password";
+$d = getenv("DB_NAME") ?: "db_chege_photos";
+try {
+    $pdo = new PDO("mysql:host={$h};port={$pt};dbname={$d}", $u, $p);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS `ci_sessions` (
+        `id` varchar(128) NOT NULL,
+        `ip_address` varchar(45) NOT NULL,
+        `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `data` blob NOT NULL,
+        KEY `ci_sessions_timestamp` (`timestamp`),
+        PRIMARY KEY (`id`,`ip_address`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;");
+} catch (\Throwable $e) {}
+' 2>/dev/null || true
 else
     warn "Skipping migrations and seeding because MySQL is not yet healthy"
 fi

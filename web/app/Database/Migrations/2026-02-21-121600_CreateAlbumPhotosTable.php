@@ -8,6 +8,10 @@ class CreateAlbumPhotosTable extends Migration
 {
     public function up()
     {
+        if ($this->db->tableExists('tbl_album_photos')) {
+            return;
+        }
+
         $this->forge->addField([
             'album_id' => ['type' => 'INT', 'constraint' => 11, 'unsigned' => true],
             'photo_id' => ['type' => 'INT', 'constraint' => 11, 'unsigned' => true],
@@ -15,7 +19,7 @@ class CreateAlbumPhotosTable extends Migration
         ]);
         $this->forge->addForeignKey('album_id', 'tbl_albums', 'id', 'CASCADE', 'CASCADE');
         $this->forge->addForeignKey('photo_id', 'tbl_photos', 'id', 'CASCADE', 'CASCADE');
-        $this->forge->createTable('tbl_album_photos');
+        $this->forge->createTable('tbl_album_photos', true);
     }
 
     public function down()

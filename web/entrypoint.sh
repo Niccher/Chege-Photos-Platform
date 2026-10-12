@@ -85,6 +85,27 @@ if [ "$MIGRATION_FAILED" -eq 0 ]; then
     CI_ENVIRONMENT=development php spark db:seed SystemDefaultSeeder || echo "WARNING: System default seeding skipped."
 fi
 
+# Ensure session table exists so database session handler never fails
+echo "Verifying session table exists..."
+php -r '
+$h = getenv("DB_HOST") ?: "mysql";
+$pt = getenv("DB_PORT") ?: "3306";
+$u = getenv("DB_USER") ?: "root";
+$p = getenv("DB_PASS") ?: "root_password";
+$d = getenv("DB_NAME") ?: "db_chege_photos";
+try {
+    $pdo = new PDO("mysql:host={$h};port={$pt};dbname={$d}", $u, $p);
+    $pdo->exec("CREATE TABLE IF NOT EXISTS `ci_sessions` (
+        `id` varchar(128) NOT NULL,
+        `ip_address` varchar(45) NOT NULL,
+        `timestamp` timestamp NOT NULL DEFAULT CURRENT_TIMESTAMP,
+        `data` blob NOT NULL,
+        KEY `ci_sessions_timestamp` (`timestamp`),
+        PRIMARY KEY (`id`,`ip_address`)
+    ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;");
+} catch (\Throwable $e) {}
+' 2>/dev/null || true
+
 # Re-enforce writable permissions after CLI root execution (targeted to writable only)
 chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
 

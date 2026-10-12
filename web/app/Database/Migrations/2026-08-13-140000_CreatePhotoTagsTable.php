@@ -8,6 +8,10 @@ class CreatePhotoTagsTable extends Migration
 {
     public function up()
     {
+        if ($this->db->tableExists('tbl_photo_tags')) {
+            return;
+        }
+
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -35,7 +39,7 @@ class CreatePhotoTagsTable extends Migration
         $this->forge->addKey('id', true);
         $this->forge->addForeignKey('photo_id', 'tbl_photos', 'id', 'CASCADE', 'CASCADE');
         $this->forge->addKey('tag');
-        $this->forge->createTable('tbl_photo_tags');
+        $this->forge->createTable('tbl_photo_tags', true);
     }
 
     public function down()

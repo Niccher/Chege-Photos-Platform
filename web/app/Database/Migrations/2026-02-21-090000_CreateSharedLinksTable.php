@@ -8,6 +8,10 @@ class CreateSharedLinksTable extends Migration
 {
     public function up()
     {
+        if ($this->db->tableExists('tbl_shared_links')) {
+            return;
+        }
+
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -35,7 +39,7 @@ class CreateSharedLinksTable extends Migration
 
         $this->forge->addKey('id', true);
         $this->forge->addForeignKey('photo_id', 'tbl_photos', 'id', 'CASCADE', 'CASCADE');
-        $this->forge->createTable('tbl_shared_links');
+        $this->forge->createTable('tbl_shared_links', true);
     }
 
     public function down()
