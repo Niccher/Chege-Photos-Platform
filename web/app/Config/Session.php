@@ -5,6 +5,7 @@ namespace Config;
 use CodeIgniter\Config\BaseConfig;
 use CodeIgniter\Session\Handlers\BaseHandler;
 use CodeIgniter\Session\Handlers\DatabaseHandler;
+use CodeIgniter\Session\Handlers\RedisHandler;
 
 class Session extends BaseConfig
 {
@@ -21,7 +22,7 @@ class Session extends BaseConfig
      *
      * @var class-string<BaseHandler>
      */
-    public string $driver = DatabaseHandler::class;
+    public string $driver = RedisHandler::class;
 
     /**
      * --------------------------------------------------------------------------
@@ -57,7 +58,7 @@ class Session extends BaseConfig
      *
      * IMPORTANT: You are REQUIRED to set a valid save path!
      */
-    public string $savePath = 'ci_sessions';
+    public string $savePath = 'tcp://redis:6379';
 
     /**
      * --------------------------------------------------------------------------
