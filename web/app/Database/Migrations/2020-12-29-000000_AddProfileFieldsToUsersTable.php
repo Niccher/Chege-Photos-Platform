@@ -21,26 +21,46 @@ class AddProfileFieldsToUsersTable extends Migration
                 'null'       => true,
                 'after'      => 'name',
             ],
+            'vault_pin_hash' => [
+                'type'       => 'VARCHAR',
+                'constraint' => 255,
+                'null'       => true,
+            ],
+            'vault_failed_attempts' => [
+                'type'       => 'INT',
+                'constraint' => 11,
+                'default'    => 0,
+            ],
+            'vault_locked_until' => [
+                'type' => 'DATETIME',
+                'null' => true,
+            ],
+            'auto_vault_nsfw' => [
+                'type'       => 'TINYINT',
+                'constraint' => 1,
+                'default'    => 1,
+            ],
         ];
 
-        if ($this->db->tableExists('users')) {
-            if (!$this->db->fieldExists('name', 'users')) {
-                $this->forge->addColumn('users', ['name' => $fields['name']]);
-            }
-            if (!$this->db->fieldExists('avatar', 'users')) {
-                $this->forge->addColumn('users', ['avatar' => $fields['avatar']]);
+        $usersTable = $this->db->tableExists('users') ? 'users' : ($this->db->tableExists('tbl_users') ? 'tbl_users' : null);
+        if ($usersTable) {
+            foreach ($fields as $colName => $colDef) {
+                if (!$this->db->fieldExists($colName, $usersTable)) {
+                    $this->forge->addColumn($usersTable, [$colName => $colDef]);
+                }
             }
         }
     }
 
     public function down(): void
     {
-        if ($this->db->tableExists('users')) {
-            if ($this->db->fieldExists('name', 'users')) {
-                $this->forge->dropColumn('users', 'name');
-            }
-            if ($this->db->fieldExists('avatar', 'users')) {
-                $this->forge->dropColumn('users', 'avatar');
+        $usersTable = $this->db->tableExists('users') ? 'users' : ($this->db->tableExists('tbl_users') ? 'tbl_users' : null);
+        if ($usersTable) {
+            $cols = ['name', 'avatar', 'vault_pin_hash', 'vault_failed_attempts', 'vault_locked_until', 'auto_vault_nsfw'];
+            foreach ($cols as $col) {
+                if ($this->db->fieldExists($col, $usersTable)) {
+                    $this->forge->dropColumn($usersTable, $col);
+                }
             }
         }
     }

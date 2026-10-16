@@ -8,6 +8,21 @@ class CreateFaceEncodingsTable extends Migration
 {
     public function up(): void
     {
+        if ($this->db->tableExists('tbl_face_encodings')) {
+            if (!$this->db->fieldExists('emotion', 'tbl_face_encodings')) {
+                $this->forge->addColumn('tbl_face_encodings', [
+                    'emotion' => [
+                        'type'       => 'VARCHAR',
+                        'constraint' => 50,
+                        'null'       => true,
+                        'after'      => 'gender',
+                    ],
+                ]);
+            }
+            $this->ensureEmotionIndex();
+            return;
+        }
+
         $this->forge->addField([
             'id' => [
                 'type'           => 'INT',
@@ -120,6 +135,20 @@ class CreateFaceEncodingsTable extends Migration
         $this->forge->addForeignKey('photo_id', 'tbl_photos', 'id', 'CASCADE', 'CASCADE');
         $this->forge->addForeignKey('person_id', 'tbl_people', 'id', 'SET NULL', 'CASCADE');
         $this->forge->createTable('tbl_face_encodings', true);
+        $this->ensureEmotionIndex();
+    }
+
+    private function ensureEmotionIndex(): void
+    {
+        try {
+            $indexes = $this->db->getIndexData('tbl_face_encodings');
+            $indexNames = array_column($indexes, 'name');
+            if (!in_array('idx_face_emotion', $indexNames, true)) {
+                $this->db->query("CREATE INDEX `idx_face_emotion` ON `tbl_face_encodings` (`emotion`)");
+            }
+        } catch (\Throwable $e) {
+            // Ignore non-critical index creation notice
+        }
     }
 
     public function down(): void
