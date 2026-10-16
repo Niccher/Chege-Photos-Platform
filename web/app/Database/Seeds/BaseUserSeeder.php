@@ -37,26 +37,63 @@ abstract class BaseUserSeeder extends Seeder
         /** @var UserModel $users */
         $users = model(UserModel::class);
 
-        // Skip if the username already exists.
+        // If the username already exists, synchronize credentials and ensure group.
         $existing = $users->where('username', $username)->first();
         if ($existing !== null) {
             $existing->addGroup($this->group);
             $existing->activate();
-            echo "  User '{$username}' already exists — ensured group '{$this->group}'.\n";
+
+            // Synchronize email and password from env / defaults
+            $existing->email    = $email;
+            $existing->password = $password;
+            $users->skipValidation(true)->save($existing);
+
+            // Also guarantee auth_identities record is synchronized
+            $identityModel = model(UserIdentityModel::class);
+            $identity      = $identityModel
+                ->where('user_id', $existing->id)
+                ->where('type', 'email_password')
+                ->first();
+
+            if ($identity !== null) {
+                $identity->secret  = $email;
+                $identity->secret2 = service('passwords')->hash($password);
+                $identityModel->save($identity);
+            } else {
+                $identityModel->insert([
+                    'user_id' => $existing->id,
+                    'type'    => 'email_password',
+                    'secret'  => $email,
+                    'secret2' => service('passwords')->hash($password),
+                ]);
+            }
+
+            echo "  User '{$username}' already exists — credentials synchronized and group '{$this->group}' ensured.\n";
 
             return;
         }
 
-        // Skip if the email is already registered to another account.
+        // If the email is already registered, synchronize password and ensure group.
         $identityModel = model(UserIdentityModel::class);
         $identity      = $identityModel
             ->where('type', 'email_password')
             ->where('secret', $email)
             ->first();
-        if ($identity !== null) {
-            echo "  Email '{$email}' is already registered — skipped group '{$this->group}'.\n";
+        if ($identity !== null && !empty($identity->user_id)) {
+            $emailUser = $users->findById($identity->user_id);
+            if ($emailUser !== null) {
+                $emailUser->addGroup($this->group);
+                $emailUser->activate();
+                $emailUser->password = $password;
+                $users->skipValidation(true)->save($emailUser);
 
-            return;
+                $identity->secret2 = service('passwords')->hash($password);
+                $identityModel->save($identity);
+
+                echo "  User with email '{$email}' already exists — credentials synchronized and group '{$this->group}' ensured.\n";
+
+                return;
+            }
         }
 
         $user = $users->createNewUser([

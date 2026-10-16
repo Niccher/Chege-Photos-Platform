@@ -357,7 +357,7 @@
                     All options on this page are stored in the MySQL <code>settings</code> table.
                 </p>
                 <p class="text-muted small mb-0" style="line-height: 1.6;">
-                    Values are cached in memory for zero database latency and survive all server restarts and Railway deployments.
+                    Values are cached in memory for zero database latency and survive all server restarts and container deployments.
                 </p>
             </div>
         </div>

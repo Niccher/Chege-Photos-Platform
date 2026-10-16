@@ -32,8 +32,11 @@ $current_uri = uri_string();
             <span>Export Data</span>
         </a>
         <a class="list-group-item list-group-item-action <?= ($current_uri === 'settings/access-tokens') ? 'active' : '' ?> p-3 border-0 d-flex align-items-center gap-3" href="<?= base_url('settings/access-tokens') ?>">
-            <i class="bi bi-key fs-5"></i>
-            <span>Access Tokens</span>
+            <i class="bi bi-phone fs-5 text-primary"></i>
+            <div>
+                <span class="d-block fw-semibold">Mobile App Pairing</span>
+                <span class="text-muted" style="font-size: 11px;">Connect phone via QR or Token</span>
+            </div>
         </a>
         <a class="list-group-item list-group-item-action <?= ($current_uri === 'settings/danger') ? 'active' : '' ?> p-3 border-0 d-flex align-items-center gap-3 text-danger" href="<?= base_url('settings/danger') ?>">
             <i class="bi bi-exclamation-triangle fs-5"></i>

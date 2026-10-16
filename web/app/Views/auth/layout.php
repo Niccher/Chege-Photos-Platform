@@ -1,16 +1,17 @@
+<?php $appSiteName = setting('App.siteName') ?: (env('APP_NAME') ?: 'Chege Photos'); ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $this->renderSection('title') ?: 'Chege Photos — Sign in' ?></title>
-    <meta name="description" content="Sign in or register for Chege Photos self-hosted photo management.">
+    <title><?= $this->renderSection('title') ?: (esc($appSiteName) . ' — Sign in') ?></title>
+    <meta name="description" content="Sign in or register for <?= esc($appSiteName) ?> self-hosted photo management.">
     <link rel="canonical" href="<?= current_url() ?>">
     <meta name="theme-color" content="#4f46e5">
-    <meta property="og:site_name" content="Chege Photos">
+    <meta property="og:site_name" content="<?= esc($appSiteName) ?>">
     <meta property="og:url" content="<?= current_url() ?>">
-    <meta property="og:title" content="<?= $this->renderSection('title') ?: 'Chege Photos — Sign in' ?>">
-    <meta property="og:description" content="Sign in or register for Chege Photos self-hosted photo management.">
+    <meta property="og:title" content="<?= $this->renderSection('title') ?: (esc($appSiteName) . ' — Sign in') ?>">
+    <meta property="og:description" content="Sign in or register for <?= esc($appSiteName) ?> self-hosted photo management.">
     <meta property="og:image" content="<?= base_url('app_icon.png') ?>">
     <!-- Bulletproof Zero-Dependency Theme Engine -->
     <script>

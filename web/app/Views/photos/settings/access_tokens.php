@@ -4,8 +4,8 @@
 <div class="card border-0 shadow-sm rounded-card p-4" style="background: var(--card-bg); color: var(--text-primary);">
     <div class="d-flex flex-wrap align-items-center justify-content-between gap-3 mb-4">
         <div>
-            <h5 class="mb-1"><i class="bi bi-key me-2"></i>Access Tokens</h5>
-            <p class="text-muted small mb-0">Generate single-use 8-character tokens for device authentication.</p>
+            <h5 class="mb-1"><i class="bi bi-phone me-2 text-primary"></i>Mobile App Pairing &amp; Access Tokens</h5>
+            <p class="text-muted small mb-0">Generate instant QR codes and tokens to pair and authenticate your Android mobile phone with your library.</p>
         </div>
         <button class="btn btn-primary rounded-pill px-4" id="btnGenerateToken">
             <i class="bi bi-plus-lg me-1"></i> Generate Token

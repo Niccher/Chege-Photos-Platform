@@ -312,12 +312,12 @@
                     <h6 class="fw-bold mb-0"><i class="bi bi-diagram-2 text-primary me-2"></i>ML Service Endpoint</h6>
                     <span class="badge bg-secondary rounded-pill small" id="badgeMlUrlSource"><?= esc($mlUrlSource ?? 'Auto-detected') ?></span>
                 </div>
-                <p class="text-muted small mb-3">Target endpoint for InsightFace, YOLOv8, and CLIP microservice. Leave empty to use automatic Railway private DNS discovery.</p>
+                <p class="text-muted small mb-3">Target endpoint for InsightFace, YOLOv8, and CLIP microservice. Leave empty to use automatic service discovery.</p>
                 
                 <div class="mb-3">
                     <label class="form-label small fw-bold">Service Endpoint URL:</label>
                     <div class="input-group">
-                        <input type="text" id="inputMlUrl" name="mlUrl" form="formAdminMl" class="form-control font-monospace small bg-light border-0 py-2" placeholder="e.g. http://ml-chege-photos.railway.internal:8000" value="<?= esc($mlUrlSetting ?? '') ?>">
+                        <input type="text" id="inputMlUrl" name="mlUrl" form="formAdminMl" class="form-control font-monospace small bg-light border-0 py-2" placeholder="e.g. http://ml:8000 or http://127.0.0.1:8000" value="<?= esc($mlUrlSetting ?? '') ?>">
                         <button type="button" class="btn btn-primary btn-sm px-3" id="btnTestMlEndpoint" title="Test Connection">
                             <i class="bi bi-broadcast me-1"></i> Test
                         </button>
@@ -534,7 +534,7 @@
                             <div class="p-3 rounded-3 border" style="background: var(--input-bg);">
                                 <div class="fw-bold small text-dark mb-1"><i class="bi bi-cpu me-1 text-success"></i> Aggressive Processing &amp; Workers</div>
                                 <div id="diagWorkerInfo" class="small text-muted mb-1">Checking...</div>
-                                <div class="extra-small text-muted">Tune via <code>ML_CONCURRENT_WORKERS</code> env variable in Railway.</div>
+                                <div class="extra-small text-muted">Tune via <code>ML_CONCURRENT_WORKERS</code> environment variable.</div>
                             </div>
                         </div>
                     </div>
@@ -787,7 +787,7 @@
                         .addClass('alert-danger')
                         .html('<div class="fw-bold mb-1"><i class="bi bi-exclamation-triangle-fill me-1"></i> Connection Error</div>' +
                               '<div>' + err + '</div>' + attempted +
-                              '<div class="extra-small text-muted mt-2"><strong>Railway Tip:</strong> In Railway dashboard, ensure your ML service is running and verify whether its private domain is <code>ml-chege-photos.railway.internal:8000</code> or generate a public domain and enter it here.</div>');
+                              '<div class="extra-small text-muted mt-2"><strong>Server Tip:</strong> Ensure your ML service container is running and verify whether its host URL is accessible (e.g. <code>http://ml:8000</code> or your host IP) or enter its explicit URL above.</div>');
                 showToast('Failed to reach ML service', 'danger');
             });
         });

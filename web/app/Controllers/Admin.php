@@ -264,7 +264,7 @@ class Admin extends BaseController
             'apiKey'         => $this->getMlApiKey(),
             'mlUrlSetting'   => setting('ML.url') ?: '',
             'activeMlUrl'    => $this->getMlUrl(),
-            'mlUrlSource'    => setting('ML.url') ? 'Custom Setting' : (env('ML_URL') ? 'Environment Variable (ML_URL)' : ((getenv('RAILWAY_ENVIRONMENT') || getenv('RAILWAY_PROJECT_ID')) ? 'Auto-detected (Railway Private)' : 'Default (Local)')),
+            'mlUrlSource'    => setting('ML.url') ? 'Custom Setting' : (env('ML_URL') ? 'Environment Variable (ML_URL)' : 'Auto-detected (Private Network)'),
             'storageUsed'    => $this->formatBytes($totalBytes),
             'storagePercent' => min(100, self::calculateStorageMetrics($totalBytes)['storagePercent']),
         ];
@@ -2100,11 +2100,65 @@ class Admin extends BaseController
         $totalBytes = $photoModel->where('user_id', $userId)->selectSum('size')->first()['size'] ?? 0;
 
         $db = \Config\Database::connect();
-        $cronLogs = $db->table('sys_cron_logs')
-            ->orderBy('run_at', 'DESC')
-            ->limit(100)
-            ->get()
-            ->getResultArray();
+
+        // Self-heal sys_cron_logs schema if missing expected columns
+        try {
+            if ($db->tableExists('sys_cron_logs')) {
+                $fieldsToAdd = [];
+                if (!$db->fieldExists('job_name', 'sys_cron_logs')) {
+                    $fieldsToAdd['job_name'] = ['type' => 'VARCHAR', 'constraint' => 191, 'null' => true, 'after' => 'id'];
+                }
+                if (!$db->fieldExists('command', 'sys_cron_logs')) {
+                    $fieldsToAdd['command'] = ['type' => 'VARCHAR', 'constraint' => 191, 'null' => true, 'after' => 'job_name'];
+                }
+                if (!$db->fieldExists('duration_seconds', 'sys_cron_logs')) {
+                    $fieldsToAdd['duration_seconds'] = ['type' => 'DECIMAL', 'constraint' => '10,4', 'null' => true, 'default' => 0.0000];
+                }
+                if (!$db->fieldExists('execution_time_ms', 'sys_cron_logs')) {
+                    $fieldsToAdd['execution_time_ms'] = ['type' => 'INT', 'constraint' => 11, 'null' => true, 'default' => 0];
+                }
+                if (!$db->fieldExists('run_at', 'sys_cron_logs')) {
+                    $fieldsToAdd['run_at'] = ['type' => 'DATETIME', 'null' => true];
+                }
+                if (!$db->fieldExists('created_at', 'sys_cron_logs')) {
+                    $fieldsToAdd['created_at'] = ['type' => 'DATETIME', 'null' => true];
+                }
+                if (!empty($fieldsToAdd)) {
+                    $forge = \Config\Database::forge();
+                    $forge->addColumn('sys_cron_logs', $fieldsToAdd);
+                }
+            }
+        } catch (\Throwable $e) {
+            log_message('warning', 'sys_cron_logs auto-heal notice: ' . $e->getMessage());
+        }
+
+        $cronLogs = [];
+        try {
+            if ($db->tableExists('sys_cron_logs')) {
+                $builder = $db->table('sys_cron_logs');
+                if ($db->fieldExists('run_at', 'sys_cron_logs')) {
+                    $builder->orderBy('run_at', 'DESC');
+                } elseif ($db->fieldExists('created_at', 'sys_cron_logs')) {
+                    $builder->orderBy('created_at', 'DESC');
+                } else {
+                    $builder->orderBy('id', 'DESC');
+                }
+                $rawLogs = $builder->limit(100)->get()->getResultArray();
+                foreach ($rawLogs as $raw) {
+                    $cronLogs[] = [
+                        'id'               => $raw['id'] ?? 0,
+                        'job_name'         => $raw['job_name'] ?? $raw['command'] ?? 'unknown',
+                        'command'          => $raw['command'] ?? $raw['job_name'] ?? '',
+                        'status'           => $raw['status'] ?? 'pending',
+                        'output'           => $raw['output'] ?? '',
+                        'duration_seconds' => $raw['duration_seconds'] ?? (isset($raw['execution_time_ms']) ? $raw['execution_time_ms'] / 1000 : 0),
+                        'run_at'           => $raw['run_at'] ?? $raw['created_at'] ?? date('Y-m-d H:i:s'),
+                    ];
+                }
+            }
+        } catch (\Throwable $e) {
+            log_message('error', 'Error reading sys_cron_logs: ' . $e->getMessage());
+        }
 
         $now = time();
         $tasksConfig = [
@@ -2273,18 +2327,41 @@ class Admin extends BaseController
             $nextRunTs = $this->getNextCronRun($expr, $now);
             $humanSched = $this->describeCron($expr);
 
-            // Fetch last execution log for this specific command
-            $lastLog = $db->table('sys_cron_logs')
-                ->where('job_name', $t['command'])
-                ->orderBy('run_at', 'DESC')
-                ->limit(1)
-                ->get()
-                ->getRowArray();
+            // Fetch last execution log for this specific command safely
+            $lastLog = null;
+            try {
+                if ($db->tableExists('sys_cron_logs')) {
+                    $logBuilder = $db->table('sys_cron_logs');
+                    if ($db->fieldExists('job_name', 'sys_cron_logs') && $db->fieldExists('command', 'sys_cron_logs')) {
+                        $logBuilder->groupStart()
+                            ->where('job_name', $t['command'])
+                            ->orWhere('command', $t['command'])
+                            ->groupEnd();
+                    } elseif ($db->fieldExists('job_name', 'sys_cron_logs')) {
+                        $logBuilder->where('job_name', $t['command']);
+                    } elseif ($db->fieldExists('command', 'sys_cron_logs')) {
+                        $logBuilder->where('command', $t['command']);
+                    }
 
-            $lastRunAt = $lastLog['run_at'] ?? null;
+                    if ($db->fieldExists('run_at', 'sys_cron_logs')) {
+                        $logBuilder->orderBy('run_at', 'DESC');
+                    } elseif ($db->fieldExists('created_at', 'sys_cron_logs')) {
+                        $logBuilder->orderBy('created_at', 'DESC');
+                    } else {
+                        $logBuilder->orderBy('id', 'DESC');
+                    }
+
+                    $lastLog = $logBuilder->limit(1)->get()->getRowArray();
+                }
+            } catch (\Throwable $e) {
+                $lastLog = null;
+            }
+
+            $lastRunAt = $lastLog['run_at'] ?? $lastLog['created_at'] ?? null;
             $lastStatus = $lastLog['status'] ?? 'pending';
             $lastOutput = $lastLog['output'] ?? 'No execution recorded yet.';
-            $lastDuration = isset($lastLog['duration_seconds']) ? number_format($lastLog['duration_seconds'], 2) . 's' : '-';
+            $durationSec = $lastLog['duration_seconds'] ?? (isset($lastLog['execution_time_ms']) ? $lastLog['execution_time_ms'] / 1000 : null);
+            $lastDuration = ($durationSec !== null) ? number_format((float) $durationSec, 2) . 's' : '-';
 
             $processedTasks[] = array_merge($t, [
                 'expression'     => $expr,
@@ -2308,9 +2385,12 @@ class Admin extends BaseController
             }
         }
         if (!$daemonActive && !empty($cronLogs)) {
-            $latestRun = strtotime($cronLogs[0]['run_at']);
-            if (($now - $latestRun) < 900) {
-                $daemonActive = true;
+            $firstTime = $cronLogs[0]['run_at'] ?? null;
+            if ($firstTime) {
+                $latestRun = strtotime($firstTime);
+                if ($latestRun && ($now - $latestRun) < 900) {
+                    $daemonActive = true;
+                }
             }
         }
 

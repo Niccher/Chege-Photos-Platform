@@ -6,7 +6,7 @@
     <div class="d-flex flex-wrap justify-content-between align-items-center mb-4 gap-3">
         <div>
             <h1 class="h4 fw-bold mb-1"><i class="bi bi-speedometer2 text-primary me-2"></i>Container Telemetry &amp; Health</h1>
-            <p class="text-muted small mb-0">Near-realtime RAM utilization, CPU performance, and Railway OOM prevention monitoring.</p>
+            <p class="text-muted small mb-0">Near-realtime RAM utilization, CPU performance, and Container OOM prevention monitoring.</p>
         </div>
         <div class="d-flex align-items-center gap-3">
             <div class="form-check form-switch m-0 d-flex align-items-center gap-2">
@@ -20,13 +20,13 @@
         </div>
     </div>
 
-    <!-- Railway OOM Warning Alert (Dynamic) -->
+    <!-- Container OOM Warning Alert (Dynamic) -->
     <div id="oomAlertBanner" class="alert alert-danger d-none align-items-center shadow-sm rounded-3 mb-4" role="alert" style="border-left: 5px solid #dc3545;">
         <i class="bi bi-exclamation-triangle-fill fs-3 me-3 text-danger"></i>
         <div class="flex-grow-1">
-            <h6 class="fw-bold mb-1 text-danger">High Memory Usage Warning — Railway OOM Risk</h6>
+            <h6 class="fw-bold mb-1 text-danger">High Memory Usage Warning — Container OOM Risk</h6>
             <p class="small mb-0 text-danger opacity-75" id="oomAlertMessage">
-                One or more containers exceed 85% allocated RAM. Railway may terminate and restart containers exceeding hard memory limits.
+                One or more containers exceed 85% allocated RAM. The host system or Docker daemon may terminate and restart containers exceeding hard memory limits.
             </p>
         </div>
     </div>
@@ -200,7 +200,7 @@
             <div>
                 <h6 class="fw-bold mb-1">About Telemetry &amp; Memory Safeguards</h6>
                 <p class="small text-muted mb-2">
-                    Railway container instances operate inside Linux control groups (cgroups v2). If a service exceeds 100% of its provisioned container memory, the Linux kernel invokes the OOM Killer and abruptly restarts the container.
+                    Container instances operate inside Linux control groups (cgroups v2). If a service exceeds 100% of its provisioned container memory, the Linux kernel invokes the OOM Killer and abruptly restarts the container.
                 </p>
                 <p class="small text-muted mb-0">
                     This dashboard continuously samples real-time memory pressure across all four backend nodes. If memory reaches <strong>85%</strong>, an automated alert appears to provide timely visibility before any interruption occurs.

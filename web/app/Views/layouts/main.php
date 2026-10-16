@@ -1,16 +1,17 @@
+<?php $appSiteName = setting('App.siteName') ?: (env('APP_NAME') ?: 'Chege Photos'); ?>
 <!DOCTYPE html>
 <html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title><?= $this->renderSection('title') ?: 'Chege Photos — Photo Management' ?></title>
+    <title><?= $this->renderSection('title') ?: (esc($appSiteName) . ' — Photo Management') ?></title>
     <meta name="description" content="Manage, search, organize, and view your photo library with AI face recognition.">
     <link rel="canonical" href="<?= current_url() ?>">
     <meta name="theme-color" content="#1a1a2e">
     <link rel="manifest" href="<?= base_url('manifest.json') ?>">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Chege Photos">
+    <meta name="apple-mobile-web-app-title" content="<?= esc($appSiteName) ?>">
     <link rel="apple-touch-icon" href="<?= base_url('icons/icon-192.png') ?>">
     <!-- Bulletproof Zero-Dependency Theme Engine -->
     <script>
@@ -108,7 +109,7 @@
             </button>
             <a class="navbar-brand me-auto" href="<?= base_url('photos') ?>">
                 <img src="<?= base_url('app_icon.png') ?>" alt="Logo" width="32" height="32" class="me-2 rounded shadow-sm">
-                <span>Photos</span>
+                <span><?= esc($appSiteName) ?></span>
             </a>
         <?php $isAdminRoute = str_starts_with((uri_string() ?? ''), 'admin'); ?>
         <?php if (!$isAdminRoute): ?>

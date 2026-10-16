@@ -242,31 +242,31 @@
                                 <?php foreach ($cronLogs as $log): ?>
                                     <tr style="border-color: var(--border-color) !important;">
                                         <td class="fw-bold">
-                                            <code class="text-primary font-monospace"><?= esc($log['job_name']) ?></code>
+                                            <code class="text-primary font-monospace"><?= esc($log['job_name'] ?? $log['command'] ?? 'unknown') ?></code>
                                         </td>
                                         <td>
-                                            <?php if ($log['status'] === 'success'): ?>
+                                            <?php if (($log['status'] ?? '') === 'success'): ?>
                                                 <span class="badge bg-success text-white rounded-pill px-3 py-1 fw-bold">
                                                     <i class="bi bi-check-circle me-1"></i> Success
                                                 </span>
                                             <?php else: ?>
                                                 <span class="badge bg-danger text-white rounded-pill px-3 py-1 fw-bold">
-                                                    <i class="bi bi-exclamation-triangle me-1"></i> Failed
+                                                    <i class="bi bi-exclamation-triangle me-1"></i> <?= esc(ucfirst($log['status'] ?? 'Failed')) ?>
                                                 </span>
                                             <?php endif; ?>
                                         </td>
                                         <td class="text-muted font-monospace text-break" style="max-width: 350px;">
-                                            <?= esc(mb_strimwidth($log['output'], 0, 85, '...')) ?>
+                                            <?= esc(mb_strimwidth($log['output'] ?? '', 0, 85, '...')) ?>
                                         </td>
-                                        <td><?= number_format($log['duration_seconds'], 3) ?>s</td>
-                                        <td class="text-muted"><?= esc($log['run_at']) ?></td>
+                                        <td><?= number_format((float) ($log['duration_seconds'] ?? 0), 3) ?>s</td>
+                                        <td class="text-muted"><?= esc($log['run_at'] ?? $log['created_at'] ?? '-') ?></td>
                                         <td class="text-end">
                                             <button type="button" class="btn btn-sm btn-outline-primary rounded-pill px-3 py-1 btn-view-cron-log"
-                                                data-job="<?= esc($log['job_name']) ?>"
-                                                data-status="<?= esc($log['status']) ?>"
-                                                data-output="<?= esc($log['output']) ?>"
-                                                data-duration="<?= number_format($log['duration_seconds'], 3) ?>s"
-                                                data-time="<?= esc($log['run_at']) ?>">
+                                                data-job="<?= esc($log['job_name'] ?? $log['command'] ?? '') ?>"
+                                                data-status="<?= esc($log['status'] ?? '') ?>"
+                                                data-output="<?= esc($log['output'] ?? '') ?>"
+                                                data-duration="<?= number_format((float) ($log['duration_seconds'] ?? 0), 3) ?>s"
+                                                data-time="<?= esc($log['run_at'] ?? $log['created_at'] ?? '') ?>">
                                                 <i class="bi bi-eye me-1"></i> View Output
                                             </button>
                                         </td>
