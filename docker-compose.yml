@@ -117,7 +117,7 @@ services:
     restart: unless-stopped
 
   minio-init:
-    image: cgr.dev/chainguard/minio-client:latest
+    image: cgr.dev/chainguard/minio-client:latest-dev
     container_name: chege-minio-init
     user: "0"
     depends_on:
