@@ -13,6 +13,8 @@
 #   - Qdrant Vector DB    : Port 6333 (HTTP) / 6334 (gRPC)
 #   - Redis In-Memory DB  : Port 6379
 #   - MySQL 8.4 Database  : Port 3306
+#   - MinIO S3 API        : Port 9000
+#   - MinIO Web Console   : Port 9001
 #
 # 13-Step Automated Pipeline:
 #   1. Detect Dynamic IP (Public / LAN Fallback)
@@ -20,8 +22,8 @@
 #   3. Git Working Tree Sanity Check, Auto-Stash & Pull
 #   4. Write / Patch .env Configuration & Encryption Keys
 #   5. Stop Old Containers & Clear Explicit Name Conflicts
-#   6. Build & Start Containers (MySQL, Redis, Qdrant, Web, ML)
-#   7. Wait for Database, Redis & Vector Services (7a: MySQL, 7b: Redis, 7c: Qdrant, 7d: Cron)
+#   6. Build & Start Containers (MySQL, Redis, Qdrant, MinIO, Web, ML)
+#   7. Wait for Infrastructure Services (7a: MySQL, 7b: Redis, 7c: Qdrant, 7d: Cron, 7e: MinIO)
 #   8. Run Database Migrations & Initial Seeders
 #   9. Wait for ML Microservice Readiness (:8000)
 #  10. Wait for WebApp Server Readiness (:80) & Diagnosis
@@ -241,6 +243,12 @@ DB_ROOT_PASSWORD=$(get_env "DB_ROOT_PASSWORD" "root_password")
 REDIS_PORT=$(get_env "REDIS_PORT" "6379")
 QDRANT_HTTP_PORT=$(get_env "QDRANT_HTTP_PORT" "6333")
 QDRANT_GRPC_PORT=$(get_env "QDRANT_GRPC_PORT" "6334")
+MINIO_PORT=$(get_env "MINIO_PORT" "9000")
+MINIO_CONSOLE_PORT=$(get_env "MINIO_CONSOLE_PORT" "9001")
+MINIO_ROOT_USER=$(get_env "MINIO_ROOT_USER" "minio_admin")
+MINIO_ROOT_PASSWORD=$(get_env "MINIO_ROOT_PASSWORD" "minio_password123")
+S3_BUCKET=$(get_env "S3_BUCKET" "chege-photos")
+STORAGE_DRIVER=$(get_env "STORAGE_DRIVER" "minio")
 
 # Format baseURL cleanly (omit :80 if standard HTTP)
 if [ "$WEB_PORT" = "80" ]; then
@@ -258,6 +266,16 @@ set_env "DB_ROOT_PASSWORD" "$DB_ROOT_PASSWORD"
 set_env "REDIS_PORT" "$REDIS_PORT"
 set_env "QDRANT_HTTP_PORT" "$QDRANT_HTTP_PORT"
 set_env "QDRANT_GRPC_PORT" "$QDRANT_GRPC_PORT"
+set_env "MINIO_PORT" "$MINIO_PORT"
+set_env "MINIO_CONSOLE_PORT" "$MINIO_CONSOLE_PORT"
+set_env "MINIO_ROOT_USER" "$MINIO_ROOT_USER"
+set_env "MINIO_ROOT_PASSWORD" "$MINIO_ROOT_PASSWORD"
+set_env "S3_BUCKET" "$S3_BUCKET"
+set_env "STORAGE_DRIVER" "$STORAGE_DRIVER"
+set_env "S3_ENDPOINT" "http://minio:9000"
+set_env "S3_ACCESS_KEY" "$MINIO_ROOT_USER"
+set_env "S3_SECRET_KEY" "$MINIO_ROOT_PASSWORD"
+set_env "S3_USE_PATH_STYLE" "true"
 set_env "app.baseURL" "$BASE_URL"
 set_env "CI_ENVIRONMENT" "production"
 set_env "DB_HOST" "mysql"
@@ -278,13 +296,16 @@ log "ML_PORT                   -> ${ML_PORT} (FastAPI Vision Microservice)"
 log "QDRANT_HTTP_PORT          -> ${QDRANT_HTTP_PORT} (Vector Engine)"
 log "REDIS_PORT                -> ${REDIS_PORT} (In-Memory Broker)"
 log "DB_PORT                   -> ${DB_PORT} (MySQL 8.4 Database)"
+log "MINIO_PORT                -> ${MINIO_PORT} (S3 Object Storage API)"
+log "MINIO_CONSOLE_PORT        -> ${MINIO_CONSOLE_PORT} (MinIO Web Console)"
+log "S3_BUCKET                 -> ${S3_BUCKET} (Default Storage Bucket)"
 
 # ── 5. Stop Old Containers & Clear Conflicts ──────────────────
 section "5. Stopping Old Containers & Clearing Name Conflicts"
 docker compose down --remove-orphans 2>&1 | tail -3 || true
 
 # Explicitly remove legacy or conflicting container instances
-docker rm -f chege-mysql chege-redis chege-qdrant chege-photos-web chege-photos-ml 2>/dev/null || true
+docker rm -f chege-mysql chege-redis chege-qdrant chege-minio chege-minio-init chege-photos-web chege-photos-ml 2>/dev/null || true
 log "Old containers stopped and explicit name conflicts cleared"
 
 # ── 6. Build & Start Containers ───────────────────────────────
@@ -293,8 +314,8 @@ if [ "${1:-}" = "--fast" ] || [ "${1:-}" = "--no-build" ]; then
     log "Fast startup mode active (skipping image rebuild)..."
     docker compose up -d
 else
-    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant)..."
-    docker compose pull mysql redis qdrant 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
+    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant, MinIO)..."
+    docker compose pull mysql redis qdrant minio minio-init 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
 
     log "Building Web application container (PHP 8.3 + Apache)..."
     docker compose --progress=plain build web
@@ -305,7 +326,7 @@ else
     log "Starting multi-container stack in background..."
     docker compose up -d
 fi
-log "Containers created and started (mysql, redis, qdrant, web, ml)"
+log "Containers created and started (mysql, redis, qdrant, minio, web, ml)"
 
 echo ""
 echo -e "   ${BOLD}Docker Image Sizes:${RESET}"
@@ -397,6 +418,39 @@ docker compose exec -T web sh -c "
     touch /var/log/cron-run.log 2>/dev/null || true
     chmod 666 /var/log/cron-run.log 2>/dev/null || true
 " 2>&1 && log "Cron log file verified (/var/log/cron-run.log)" || true
+
+# ── 7e. Wait for MinIO & Bucket Initialization ────────────────
+section "7e. Waiting for MinIO Object Storage & Bucket Initialization"
+printf "   Checking MinIO service"
+MINIO_HEALTHY=false
+for i in $(seq 1 25); do
+    M_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-minio 2>/dev/null || echo "missing")
+    M_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${MINIO_PORT}/minio/health/live" 2>/dev/null || echo "000")
+    if [ "$M_STATUS" = "healthy" ] || [ "$M_HTTP" = "200" ]; then
+        echo ""
+        log "MinIO S3 object storage is healthy and accepting connections"
+        MINIO_HEALTHY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$MINIO_HEALTHY || { echo ""; warn "MinIO took longer to initialize. Check: docker compose logs minio"; }
+
+printf "   Verifying default bucket (${S3_BUCKET}) initialization"
+BUCKET_READY=false
+for i in $(seq 1 15); do
+    INIT_STATE=$(docker inspect --format='{{.State.Status}}' chege-minio-init 2>/dev/null || echo "missing")
+    if [ "$INIT_STATE" = "exited" ] || [ "$INIT_STATE" = "running" ]; then
+        echo ""
+        log "MinIO default bucket (${S3_BUCKET}) auto-initialization completed"
+        BUCKET_READY=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+$BUCKET_READY || { echo ""; warn "MinIO bucket init check timed out. Verify: docker compose logs minio-init"; }
 
 # ── 8. Run Database Migrations & Seeding ──────────────────────
 section "8. Running Database Migrations & Seeding"
@@ -507,6 +561,8 @@ if [[ "$FINAL_WEB" =~ ^(200|301|302|307|403)$ ]]; then
     echo -e "  ${BOLD}ML API Swagger Docs  :${RESET}  http://${DETECTED_IP}:${ML_PORT}/docs"
     echo -e "  ${BOLD}ML Health Probe      :${RESET}  http://${DETECTED_IP}:${ML_PORT}/health"
     echo -e "  ${BOLD}Qdrant Web Console   :${RESET}  http://${DETECTED_IP}:${QDRANT_HTTP_PORT}/dashboard"
+    echo -e "  ${BOLD}MinIO S3 API         :${RESET}  http://${DETECTED_IP}:${MINIO_PORT}"
+    echo -e "  ${BOLD}MinIO Web Console    :${RESET}  http://${DETECTED_IP}:${MINIO_CONSOLE_PORT}  (User: ${YELLOW}${MINIO_ROOT_USER}${RESET} / Pass: ${YELLOW}${MINIO_ROOT_PASSWORD}${RESET})"
     echo -e "  ${BOLD}Redis Cache Server   :${RESET}  localhost:${REDIS_PORT}"
     echo -e "  ${BOLD}MySQL 8.4 Relational :${RESET}  localhost:${DB_PORT}"
     echo ""

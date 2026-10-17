@@ -23,29 +23,22 @@ Chege Photos WebApp is engineered specifically to deploy effortlessly on [Railwa
 
 ## 2. Docker Compose Multi-Container Deployment
 
-For private VPS deployment (Ubuntu 22.04 / 24.04, Debian 12):
+For private VPS deployment (Ubuntu 22.04 / 24.04, Debian 12) or local orchestration:
 
-```yaml
-# docker-compose.yml snippet
-services:
-  chege-photos:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    image: chege-photos-webapp:latest
-    container_name: chege-photos-webapp
-    ports:
-      - "9005:80"
-    volumes:
-      - .:/var/www/html
-    depends_on:
-      mysql:
-        condition: service_healthy
-    networks:
-      - shared-network
+- **MySQL 8.4 Database**: Relational metadata, users, photos, albums, and cron logs (Port `3306`).
+- **Redis In-Memory Broker**: Background queue and caching (Port `6379`).
+- **Qdrant Vector Database**: Face and CLIP semantic vector embeddings (Port `6333` HTTP / `6334` gRPC).
+- **MinIO Object Storage**: S3-compatible primary photo/thumbnail bucket (Port `9000` S3 API / `9001` Web Console).
+- **MinIO Initialization**: Automatic bucket creation (`chege-photos`) and thumbnail download policy via `minio/mc`.
+- **WebApp Gateway**: CodeIgniter 4 PHP 8.3 & Apache API/UI (Port `80`).
+- **ML Microservice**: FastAPI Vision & embedding microservice (Port `8000`).
+
+One-click automated deployment:
+```bash
+bash scripts/deploy.sh
 ```
 
-Start services with:
+Or start services manually with Docker Compose:
 ```bash
 docker compose up --build -d
 ```
