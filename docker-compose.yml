@@ -74,6 +74,45 @@ services:
           - ml-qdrant
     restart: unless-stopped
 
+  minio:
+    image: minio/minio:latest
+    container_name: chege-minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "${MINIO_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_PORT:-9001}:9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_password123}
+    volumes:
+      - minio-data:/data
+    networks:
+      chege-network:
+        aliases:
+          - minio
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 3s
+      timeout: 2s
+      retries: 5
+    restart: unless-stopped
+
+  minio-init:
+    image: minio/mc:latest
+    container_name: chege-minio-init
+    depends_on:
+      - minio
+    entrypoint: >
+      /bin/sh -c "
+      until (/usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minio_admin} ${MINIO_ROOT_PASSWORD:-minio_password123}); do echo 'Waiting for MinIO...'; sleep 1; done;
+      /usr/bin/mc mb --ignore-existing myminio/${S3_BUCKET:-chege-photos};
+      /usr/bin/mc anonymous set download myminio/${S3_BUCKET:-chege-photos}/thumbnails;
+      echo 'MinIO bucket initialized successfully';
+      exit 0;
+      "
+    networks:
+      - chege-network
+
   web:
     build:
       context: ./web
@@ -98,6 +137,12 @@ services:
       ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
       REDIS_HOST: redis
       REDIS_PORT: 6379
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-chege-photos}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio_admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio_password123}
+      S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-true}
     volumes:
       - ./web:/var/www/html
       - web-vendor:/var/www/html/vendor
@@ -106,6 +151,8 @@ services:
         condition: service_healthy
       redis:
         condition: service_healthy
+      minio:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://localhost/api/v1/health\") !== false ? 0 : 1);'"]
       interval: 4s
@@ -148,6 +195,12 @@ services:
       PORT: 8000
       LOG_LEVEL: info
       ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
+      S3_BUCKET: ${S3_BUCKET:-chege-photos}
+      S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio_admin}
+      S3_SECRET_KEY: ${S3_SECRET_KEY:-minio_password123}
+      S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-true}
     volumes:
       - ./web/public/uploads:/app/uploads:ro
       - insightface_models:/app/models/insightface_models
@@ -159,6 +212,8 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
+      minio:
+        condition: service_started
     healthcheck:
       test: ["CMD-SHELL", "python -c 'import urllib.request, sys; sys.exit(0 if urllib.request.urlopen(\"http://localhost:8000/health\").getcode() == 200 else 1)'"]
       interval: 3s
@@ -177,6 +232,7 @@ volumes:
   qdrant_data:
   insightface_models:
   redis-data:
+  minio-data:
   web-vendor:
 
 networks:

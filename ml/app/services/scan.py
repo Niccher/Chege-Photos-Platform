@@ -75,43 +75,8 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
     if not photo:
         raise ValueError(f"Photo {photo_id} not found")
 
-    rel = photo.path.strip().lstrip("/").removeprefix("uploads/").lstrip("/")
-    uploads_base = Path(settings.uploads_dir)
-    photo_path = uploads_base / rel
-
-    # Download from WebApp if missing or empty on disk
-    if (not photo_path.exists() or photo_path.stat().st_size == 0) and settings.effective_webapp_url:
-        import urllib.request
-
-        candidate_urls = [
-            f"{settings.effective_webapp_url}/uploads/{rel}",
-        ]
-        if "railway" in (settings.effective_webapp_url or "").lower():
-            candidate_urls.insert(0, f"http://chege-photos-webapp.railway.internal/uploads/{rel}")
-
-        photo_path.parent.mkdir(parents=True, exist_ok=True)
-        download_success = False
-        last_dl_error = None
-
-        for dl_url in candidate_urls:
-            try:
-                req = urllib.request.Request(
-                    dl_url,
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; ChegePhotosML/1.0)"},
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    if resp.status == 200:
-                        content = resp.read()
-                        if len(content) > 100:  # Real image payload
-                            with open(photo_path, "wb") as f:
-                                f.write(content)
-                            download_success = True
-                            break
-            except Exception as dl_err:
-                last_dl_error = dl_err
-
-        if not download_success:
-            log.warning("Could not download photo %s from candidates %s: %s", photo_id, candidate_urls, last_dl_error)
+    from app.services.storage import resolve_photo_path
+    photo_path = resolve_photo_path(photo.path)
 
     if not photo_path.exists() or photo_path.stat().st_size == 0:
         raise ValueError(f"Photo file not found or empty at {photo_path}")

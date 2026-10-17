@@ -739,6 +739,16 @@ class Admin extends BaseController
                 'pendingPhotos'      => $pendingPhotos,
                 'syncPercent'        => $totalPhotos > 0 ? round(($syncedPhotos / $totalPhotos) * 100, 1) : 100,
             ],
+            's3' => [
+                'driver'       => setting('Storage.driver') ?? env('STORAGE_DRIVER') ?? 'minio',
+                'endpoint'     => setting('Storage.s3Endpoint') ?? env('S3_ENDPOINT') ?? 'http://minio:9000',
+                'bucket'       => setting('Storage.s3Bucket') ?? env('S3_BUCKET') ?? 'chege-photos',
+                'region'       => setting('Storage.s3Region') ?? env('S3_REGION') ?? 'us-east-1',
+                'accessKey'    => setting('Storage.s3AccessKey') ?? env('S3_ACCESS_KEY') ?? '',
+                'secretKey'    => setting('Storage.s3SecretKey') ?? env('S3_SECRET_KEY') ?? '',
+                'usePathStyle' => (bool) (setting('Storage.s3UsePathStyle') ?? (env('S3_USE_PATH_STYLE') !== null ? (bool) env('S3_USE_PATH_STYLE') : true)),
+                'isConfigured' => (new \App\Services\Storage\StorageManager())->isConfigured(),
+            ],
             'recentBackups'  => $recentBackups,
             'storageUsed'    => $this->formatBytes($totalBytes),
             'storagePercent' => min(100, self::calculateStorageMetrics($totalBytes)['storagePercent']),
@@ -804,6 +814,48 @@ class Admin extends BaseController
 
         $gcp = new \App\Services\GcpStorageService($config);
         $result = $gcp->testConnection();
+
+        return $this->response->setJSON($result);
+    }
+
+    public function saveS3Settings()
+    {
+        $driver       = trim($this->request->getPost('driver') ?? 'minio');
+        $endpoint     = trim($this->request->getPost('endpoint') ?? '');
+        $bucket       = trim($this->request->getPost('bucket') ?? '');
+        $region       = trim($this->request->getPost('region') ?? 'us-east-1');
+        $accessKey    = trim($this->request->getPost('accessKey') ?? '');
+        $secretKey    = trim($this->request->getPost('secretKey') ?? '');
+        $usePathStyle = $this->request->getPost('usePathStyle') ? 1 : 0;
+
+        setting()->set('Storage.driver', $driver);
+        setting()->set('Storage.s3Endpoint', $endpoint);
+        setting()->set('Storage.s3Bucket', $bucket);
+        setting()->set('Storage.s3Region', $region);
+        setting()->set('Storage.s3AccessKey', $accessKey);
+        setting()->set('Storage.s3SecretKey', $secretKey);
+        setting()->set('Storage.s3UsePathStyle', $usePathStyle);
+
+        return $this->response->setJSON([
+            'status'  => 'success',
+            'message' => 'Primary Object Storage (MinIO / S3) settings saved successfully.'
+        ]);
+    }
+
+    public function testS3Connection()
+    {
+        $config = [
+            'driver'       => trim($this->request->getPost('driver') ?? setting('Storage.driver') ?? env('STORAGE_DRIVER') ?? 'minio'),
+            'endpoint'     => trim($this->request->getPost('endpoint') ?? setting('Storage.s3Endpoint') ?? env('S3_ENDPOINT') ?? 'http://minio:9000'),
+            'bucket'       => trim($this->request->getPost('bucket') ?? setting('Storage.s3Bucket') ?? env('S3_BUCKET') ?? 'chege-photos'),
+            'region'       => trim($this->request->getPost('region') ?? setting('Storage.s3Region') ?? env('S3_REGION') ?? 'us-east-1'),
+            'accessKey'    => trim($this->request->getPost('accessKey') ?? setting('Storage.s3AccessKey') ?? env('S3_ACCESS_KEY') ?? ''),
+            'secretKey'    => trim($this->request->getPost('secretKey') ?? setting('Storage.s3SecretKey') ?? env('S3_SECRET_KEY') ?? ''),
+            'usePathStyle' => (bool) ($this->request->getPost('usePathStyle') ?? setting('Storage.s3UsePathStyle') ?? true),
+        ];
+
+        $storage = new \App\Services\Storage\StorageManager($config);
+        $result = $storage->testConnection();
 
         return $this->response->setJSON($result);
     }

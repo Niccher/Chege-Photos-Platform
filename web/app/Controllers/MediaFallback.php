@@ -54,7 +54,25 @@ class MediaFallback extends BaseController
             return $this->streamFile($localPath);
         }
 
-        // 3. File is missing locally (e.g. fresh Railway container startup) -> Check GCP
+        // 3. File is missing locally (e.g. fresh container startup) -> Check Primary Storage (MinIO / S3)
+        try {
+            $storage = new \App\Services\Storage\StorageManager();
+            if ($storage->isConfigured()) {
+                $targetDir = dirname($localPath);
+                if (!is_dir($targetDir)) {
+                    @mkdir($targetDir, 0777, true);
+                }
+
+                $downloaded = $storage->downloadFile($relativePath, $localPath);
+                if ($downloaded && file_exists($localPath) && filesize($localPath) > 0) {
+                    return $this->streamFile($localPath);
+                }
+            }
+        } catch (\Throwable $e) {
+            log_message('warning', 'Primary storage hydration failed for ' . $relativePath . ': ' . $e->getMessage());
+        }
+
+        // 4. File is missing in primary storage -> Fallback to GCP backup
         $gcp = new GcpStorageService();
 
         if ($gcp->isConfigured()) {

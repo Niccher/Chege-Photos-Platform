@@ -247,6 +247,8 @@ $routes->group('admin', ['filter' => 'group:superadmin'], function ($routes) {
 
     // Storage Configs
     $routes->get('storage', 'Admin::storage');
+    $routes->post('storage/save-s3', 'Admin::saveS3Settings');
+    $routes->post('storage/test-s3', 'Admin::testS3Connection');
     $routes->post('storage/save-gcp', 'Admin::saveGcpSettings');
     $routes->post('storage/test-gcp', 'Admin::testGcpConnection');
     $routes->post('storage/trigger-backup', 'Admin::triggerCloudBackup');

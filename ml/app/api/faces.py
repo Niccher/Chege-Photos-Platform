@@ -159,50 +159,8 @@ def process_photo_pipeline_sync(
         except Exception:
             pass
 
-    rel = photo.path.strip().lstrip("/").removeprefix("uploads/").lstrip("/")
-    uploads_base = Path(settings.uploads_dir)
-    photo_path = uploads_base / rel
-
-    active_webapp = (
-        webapp_url.strip().rstrip("/") if webapp_url else None
-    ) or settings.effective_webapp_url
-    if active_webapp and not active_webapp.startswith(("http://", "https://")):
-        active_webapp = "https://" + active_webapp
-
-    # Download from WebApp if missing or empty on disk
-    if (not photo_path.exists() or photo_path.stat().st_size == 0) and active_webapp:
-        import urllib.request
-
-        candidate_urls = [
-            f"{active_webapp}/uploads/{rel}",
-        ]
-        # If running on Railway, also attempt private DNS resolution first
-        if "railway" in (active_webapp or "").lower():
-            candidate_urls.insert(0, f"http://chege-photos-webapp.railway.internal/uploads/{rel}")
-
-        photo_path.parent.mkdir(parents=True, exist_ok=True)
-        download_success = False
-        last_dl_error = None
-
-        for dl_url in candidate_urls:
-            try:
-                req = urllib.request.Request(
-                    dl_url,
-                    headers={"User-Agent": "Mozilla/5.0 (compatible; ChegePhotosML/1.0)"},
-                )
-                with urllib.request.urlopen(req, timeout=15) as resp:
-                    if resp.status == 200:
-                        content = resp.read()
-                        if len(content) > 100:  # Real image payload
-                            with open(photo_path, "wb") as f:
-                                f.write(content)
-                            download_success = True
-                            break
-            except Exception as dl_err:
-                last_dl_error = dl_err
-
-        if not download_success:
-            log.warning("Could not download photo %s from candidates %s: %s", photo_id, candidate_urls, last_dl_error)
+    from app.services.storage import resolve_photo_path
+    photo_path = resolve_photo_path(photo.path, webapp_url=webapp_url)
 
     if not photo_path.exists() or photo_path.stat().st_size == 0:
         raise HTTPException(404, f"Photo file not found or empty at {photo_path}")

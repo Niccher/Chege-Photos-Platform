@@ -2467,10 +2467,80 @@ class Photos extends BaseController
     }
 
     /**
-     * Mirrors media file and its thumbnail to Google Cloud Storage if configured.
+     * Syncs media file and thumbnail to MinIO / S3 primary object storage.
+     */
+    protected function syncToStorage(string $uploadPath, ?string $thumbPath = null, ?string $mime = null, ?int $photoId = null): bool
+    {
+        try {
+            $storage = new \App\Services\Storage\StorageManager();
+            if (!$storage->isConfigured()) {
+                return false;
+            }
+
+            $cleanUpload = ltrim($uploadPath, '/');
+            $localUpload = FCPATH . $cleanUpload;
+            $uploaded = false;
+            if (file_exists($localUpload)) {
+                $res = $storage->uploadFile($localUpload, $cleanUpload, $mime);
+                $uploaded = !empty($res['success']);
+            }
+
+            if ($thumbPath) {
+                $cleanThumb = ltrim($thumbPath, '/');
+                $localThumb = FCPATH . $cleanThumb;
+                if (file_exists($localThumb)) {
+                    $thumbMime = str_ends_with(strtolower($cleanThumb), '.webp') ? 'image/webp' : 'image/jpeg';
+                    $storage->uploadFile($localThumb, $cleanThumb, $thumbMime);
+                }
+            }
+
+            if ($uploaded && $photoId) {
+                try {
+                    $photoModel = new \App\Models\PhotoModel();
+                    $driver = env('STORAGE_DRIVER') ?: 'minio';
+                    $photoModel->update($photoId, [
+                        'storage_driver' => $driver,
+                    ]);
+                } catch (\Throwable $e) {}
+            }
+
+            return $uploaded;
+        } catch (\Throwable $e) {
+            log_message('warning', 'Primary object storage sync failed: ' . $e->getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * Deletes media file and thumbnail from MinIO / S3 primary object storage.
+     */
+    protected function deleteFromStorage(string $uploadPath, ?string $thumbPath = null): void
+    {
+        try {
+            $storage = new \App\Services\Storage\StorageManager();
+            if (!$storage->isConfigured()) {
+                return;
+            }
+
+            if (!empty($uploadPath)) {
+                $storage->deleteFile(ltrim($uploadPath, '/'));
+            }
+            if (!empty($thumbPath)) {
+                $storage->deleteFile(ltrim($thumbPath, '/'));
+            }
+        } catch (\Throwable $e) {
+            log_message('warning', 'Primary object storage deletion failed: ' . $e->getMessage());
+        }
+    }
+
+    /**
+     * Mirrors media file and its thumbnail to Primary Storage (MinIO/S3) and Google Cloud Storage if configured.
      */
     protected function mirrorToGcp(string $uploadPath, ?string $thumbPath = null, ?string $mime = null, ?int $photoId = null): bool
     {
+        // First sync to primary S3 / MinIO storage
+        $this->syncToStorage($uploadPath, $thumbPath, $mime, $photoId);
+
         try {
             $gcp = new \App\Services\GcpStorageService();
             if (!$gcp->isConfigured()) {
@@ -2510,10 +2580,13 @@ class Photos extends BaseController
     }
 
     /**
-     * Deletes media file and its thumbnail from Google Cloud Storage if configured.
+     * Deletes media file and its thumbnail from Google Cloud Storage and MinIO/S3 if configured.
      */
     protected function deleteFromGcp(string $uploadPath, ?string $thumbPath = null): void
     {
+        // Delete from primary S3 / MinIO storage
+        $this->deleteFromStorage($uploadPath, $thumbPath);
+
         try {
             $gcp = new \App\Services\GcpStorageService();
             if (!$gcp->isConfigured()) {

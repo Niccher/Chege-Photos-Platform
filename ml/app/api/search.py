@@ -123,44 +123,11 @@ def similar_photos_endpoint(
             if not photo_row:
                 raise HTTPException(404, f"Photo {photo_id} not found")
 
-            rel = photo_row.path.strip().lstrip("/").removeprefix("uploads/").lstrip("/")
-            photo_path = Path(settings.uploads_dir) / rel
-
-            active_webapp = (
-                x_webapp_url.strip().rstrip("/") if x_webapp_url else None
-            ) or settings.effective_webapp_url
-            if active_webapp and not active_webapp.startswith(("http://", "https://")):
-                active_webapp = "https://" + active_webapp
-
-            # Download from WebApp if missing or empty on disk
-            if (not photo_path.exists() or photo_path.stat().st_size == 0) and active_webapp:
-                import urllib.request
-
-                candidate_urls = [
-                    f"{active_webapp}/uploads/{rel}",
-                ]
-                if "railway" in (active_webapp or "").lower():
-                    candidate_urls.insert(0, f"http://chege-photos-webapp.railway.internal/uploads/{rel}")
-
-                photo_path.parent.mkdir(parents=True, exist_ok=True)
-                for dl_url in candidate_urls:
-                    try:
-                        req = urllib.request.Request(
-                            dl_url,
-                            headers={"User-Agent": "Mozilla/5.0 (compatible; ChegePhotosML/1.0)"},
-                        )
-                        with urllib.request.urlopen(req, timeout=15) as resp:
-                            if resp.status == 200:
-                                content = resp.read()
-                                if len(content) > 100:
-                                    with open(photo_path, "wb") as f:
-                                        f.write(content)
-                                    break
-                    except Exception:
-                        pass
+            from app.services.storage import resolve_photo_path
+            photo_path = resolve_photo_path(photo_row.path, webapp_url=x_webapp_url)
 
             if not photo_path.exists() or photo_path.stat().st_size == 0:
-                raise HTTPException(404, f"Photo file not available on disk for embedding")
+                raise HTTPException(404, f"Photo file not available for embedding")
 
             query_vec = semantic_search.encode_image(str(photo_path))
 

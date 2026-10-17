@@ -20,10 +20,12 @@ class ProcessPendingMedia extends BaseCommand
 
     public function run(array $params)
     {
-        $startTime  = microtime(true);
-        $photoModel = new PhotoModel();
-        $gcpService = new GcpStorageService();
-        $gcpReady   = $gcpService->isConfigured();
+        $startTime      = microtime(true);
+        $photoModel     = new PhotoModel();
+        $storageService = new \App\Services\Storage\StorageManager();
+        $storageReady   = $storageService->isConfigured();
+        $gcpService     = new GcpStorageService();
+        $gcpReady       = $gcpService->isConfigured();
 
         $targetId = $params['id'] ?? CLI::getOption('id');
         $limit    = (int) ($params['limit'] ?? CLI::getOption('limit') ?? 25);
@@ -76,7 +78,25 @@ class ProcessPendingMedia extends BaseCommand
                 }
             }
 
-            // 2. Mirror to GCP if not yet synced
+            // 2. Sync to Primary Storage (MinIO / S3)
+            if ($storageReady) {
+                $s3Res = $storageService->uploadFile($fullPath, $relPath, $photo['mime_type'] ?? null);
+                if (! empty($s3Res['success'])) {
+                    $driver = env('STORAGE_DRIVER') ?: 'minio';
+                    $updates['storage_driver'] = $driver;
+                    if (! empty($photo['thumbnail_path'])) {
+                        $thumbRel  = ltrim($photo['thumbnail_path'], '/');
+                        $thumbFull = FCPATH . $thumbRel;
+                        if (file_exists($thumbFull)) {
+                            $thumbMime = str_ends_with(strtolower($thumbRel), '.webp') ? 'image/webp' : 'image/jpeg';
+                            $storageService->uploadFile($thumbFull, $thumbRel, $thumbMime);
+                        }
+                    }
+                    CLI::write("Photo #{$photoId}: Synced to Primary Storage ({$driver})", 'green');
+                }
+            }
+
+            // 3. Mirror to GCP if not yet synced
             if ($gcpReady && (empty($photo['gcp_synced']) || (int) $photo['gcp_synced'] === 0)) {
                 $res = $gcpService->uploadFile($fullPath, $relPath, $photo['mime_type'] ?? null);
                 if (! empty($res['success'])) {

@@ -74,6 +74,39 @@ class Settings(BaseSettings):
     webapp_url: str | None = None
     ml_concurrent_workers: int = 4
 
+    # ── Object Storage (MinIO / S3 / GCP) ───────────────────────
+    storage_driver: str = "minio"
+    s3_endpoint: str | None = None
+    s3_bucket: str = "chege-photos"
+    s3_access_key: str | None = None
+    s3_secret_key: str | None = None
+    s3_region: str = "us-east-1"
+    s3_use_path_style: bool = True
+
+    @property
+    def effective_s3_endpoint(self) -> str | None:
+        import os
+        return (
+            self.s3_endpoint
+            or os.getenv("S3_ENDPOINT")
+            or ("http://minio:9000" if (os.getenv("STORAGE_DRIVER") == "minio" or self.storage_driver == "minio") else None)
+        )
+
+    @property
+    def effective_s3_bucket(self) -> str:
+        import os
+        return os.getenv("S3_BUCKET") or self.s3_bucket or "chege-photos"
+
+    @property
+    def effective_s3_access_key(self) -> str | None:
+        import os
+        return self.s3_access_key or os.getenv("S3_ACCESS_KEY") or os.getenv("MINIO_ROOT_USER")
+
+    @property
+    def effective_s3_secret_key(self) -> str | None:
+        import os
+        return self.s3_secret_key or os.getenv("S3_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD")
+
     def set_dynamic_webapp_url(self, url: str | None) -> None:
         """Dynamically record the WebApp URL passed via request headers or body."""
         global _ACTIVE_DYNAMIC_WEBAPP_URL

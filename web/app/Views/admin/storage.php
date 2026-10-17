@@ -78,6 +78,105 @@
                 </p>
             </div>
 
+            <!-- Primary Object Storage (MinIO / AWS S3 / Cloud Bucket) Card -->
+            <div class="card border-0 shadow-sm rounded-card p-4 mb-4" style="background: var(--card-bg); color: var(--text-primary);">
+                <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+                    <h5 class="mb-0 d-flex align-items-center gap-2">
+                        <i class="bi bi-server text-primary"></i>
+                        <span>Primary Object Storage (MinIO / AWS S3 / Cloud Bucket)</span>
+                    </h5>
+                    <div>
+                        <?php if (!empty($s3['isConfigured'])): ?>
+                            <span class="badge bg-success text-white rounded-pill px-3 py-1.5 small fw-bold">
+                                <i class="bi bi-check-circle-fill me-1"></i> CONFIGURED (<?= strtoupper(esc($s3['driver'])) ?>)
+                            </span>
+                        <?php else: ?>
+                            <span class="badge bg-secondary text-white rounded-pill px-3 py-1.5 small fw-bold">
+                                <i class="bi bi-dash-circle me-1"></i> NOT CONFIGURED
+                            </span>
+                        <?php endif; ?>
+                    </div>
+                </div>
+
+                <div class="alert alert-info d-flex align-items-start gap-2 small mb-4 rounded-3 border-0" style="background: rgba(var(--bs-info-rgb), 0.1); color: var(--text-primary);">
+                    <i class="bi bi-info-circle-fill text-info fs-5 mt-0.5"></i>
+                    <div>
+                        <strong>Default Storage Hierarchy:</strong> Photos and thumbnails are stored directly in your S3-compatible bucket (e.g. <code>minio:9000</code> or <code>s3.amazonaws.com</code>). 
+                        Google Cloud Storage below serves as an offsite backup/mirror. If a file is requested and not on local container disk, it is streamed immediately from this primary bucket.
+                    </div>
+                </div>
+
+                <form id="formS3Storage">
+                    <div class="row g-3">
+                        <!-- Storage Provider / Driver -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Storage Provider</label>
+                            <select name="driver" id="s3DriverSelect" class="form-select bg-light border-0 py-2">
+                                <option value="minio" <?= ($s3['driver'] ?? '') === 'minio' ? 'selected' : '' ?>>MinIO (Default Local / Docker Stack)</option>
+                                <option value="s3" <?= ($s3['driver'] ?? '') === 's3' ? 'selected' : '' ?>>Amazon Web Services (AWS S3)</option>
+                                <option value="gcp_s3" <?= ($s3['driver'] ?? '') === 'gcp_s3' ? 'selected' : '' ?>>Google Cloud Storage (S3 HMAC Interoperability)</option>
+                                <option value="custom" <?= ($s3['driver'] ?? '') === 'custom' ? 'selected' : '' ?>>Custom S3-Compatible Provider (Wasabi, DigitalOcean, Cloudflare R2)</option>
+                            </select>
+                        </div>
+
+                        <!-- Bucket Name -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Bucket Name <span class="text-danger">*</span></label>
+                            <input type="text" name="bucket" class="form-control bg-light border-0 py-2" value="<?= esc($s3['bucket'] ?? 'chege-photos') ?>" placeholder="chege-photos" required>
+                        </div>
+
+                        <!-- Endpoint URL -->
+                        <div class="col-md-8">
+                            <label class="form-label small fw-bold">S3 Endpoint URL</label>
+                            <input type="text" name="endpoint" id="s3EndpointInput" class="form-control bg-light border-0 py-2 font-monospace small" value="<?= esc($s3['endpoint'] ?? 'http://minio:9000') ?>" placeholder="http://minio:9000">
+                            <span class="text-muted small">Use <code>http://minio:9000</code> for Docker internal network, or <code>https://s3.amazonaws.com</code> for AWS.</span>
+                        </div>
+
+                        <!-- Region -->
+                        <div class="col-md-4">
+                            <label class="form-label small fw-bold">Region</label>
+                            <input type="text" name="region" class="form-control bg-light border-0 py-2" value="<?= esc($s3['region'] ?? 'us-east-1') ?>" placeholder="us-east-1">
+                        </div>
+
+                        <!-- Access Key -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Access Key ID</label>
+                            <input type="text" name="accessKey" class="form-control bg-light border-0 py-2 font-monospace small" value="<?= esc($s3['accessKey'] ?? '') ?>" placeholder="admin or AWS_ACCESS_KEY_ID">
+                        </div>
+
+                        <!-- Secret Key -->
+                        <div class="col-md-6">
+                            <label class="form-label small fw-bold">Secret Access Key</label>
+                            <div class="input-group">
+                                <input type="password" name="secretKey" id="s3SecretKeyInput" class="form-control bg-light border-0 py-2 font-monospace small" value="<?= esc($s3['secretKey'] ?? '') ?>" placeholder="adminpassword or AWS_SECRET_ACCESS_KEY">
+                                <button class="btn btn-light border-0" type="button" onclick="const f = document.getElementById('s3SecretKeyInput'); f.type = f.type === 'password' ? 'text' : 'password';">
+                                    <i class="bi bi-eye"></i>
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Path Style Option -->
+                        <div class="col-12">
+                            <div class="form-check form-switch mt-2">
+                                <input class="form-check-input" type="checkbox" name="usePathStyle" id="checkUsePathStyle" value="1" <?= !empty($s3['usePathStyle']) ? 'checked' : '' ?>>
+                                <label class="form-check-label small" for="checkUsePathStyle">
+                                    <strong>Enable Path-Style S3 URLs</strong> (Required for MinIO, Cloudflare R2, and GCP S3: <code>endpoint/bucket/object</code> instead of <code>bucket.endpoint/object</code>)
+                                </label>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="d-flex justify-content-between align-items-center mt-4 pt-3 border-top flex-wrap gap-2" style="border-color: var(--border-color) !important;">
+                        <button type="submit" class="btn btn-primary px-4 rounded-pill" id="btnSaveS3">
+                            <i class="bi bi-check-lg me-1"></i> Save Primary Storage Configuration
+                        </button>
+                        <button type="button" class="btn btn-outline-info rounded-pill px-4" id="btnTestS3">
+                            <i class="bi bi-broadcast-pin me-1"></i> Test S3 / MinIO Probe
+                        </button>
+                    </div>
+                </form>
+            </div>
+
             <!-- Google Cloud Storage (GCP) Card -->
             <div class="card border-0 shadow-sm rounded-card p-4 mb-4" style="background: var(--card-bg); color: var(--text-primary);">
                 <div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
@@ -349,6 +448,42 @@
     </div>
 </div>
 
+<!-- Modal: S3 / MinIO Diagnostics Probe Checklist -->
+<div class="modal fade" id="modalS3Diagnostics" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+        <div class="modal-content border-0 shadow rounded-card" style="background: var(--card-bg); color: var(--text-primary);">
+            <div class="modal-header border-bottom pb-3" style="border-color: var(--border-color) !important;">
+                <h5 class="modal-title d-flex align-items-center gap-2">
+                    <i class="bi bi-server text-primary"></i>
+                    <span>S3 / MinIO Storage Diagnostics Probe</span>
+                </h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body py-4">
+                <div id="s3ProbeLoading" class="text-center py-4">
+                    <div class="spinner-border text-primary mb-3" style="width: 3rem; height: 3rem;" role="status"></div>
+                    <h6 class="fw-bold mb-1">Testing S3 Connection & Object Permissions...</h6>
+                    <p class="text-muted small mb-0">Testing S3 endpoint reachable, bucket existence, test object write, read-back, and purge.</p>
+                </div>
+
+                <div id="s3ProbeResults" style="display: none;">
+                    <div class="mb-3 d-flex align-items-center justify-content-between">
+                        <h6 class="fw-bold mb-0" id="s3ProbeOverallTitle">Test Results</h6>
+                        <span id="s3ProbeOverallBadge" class="badge rounded-pill px-3 py-1"></span>
+                    </div>
+
+                    <div id="s3ProbeStepsList" class="d-flex flex-column gap-2 mb-3"></div>
+
+                    <div class="alert alert-light border small text-muted mb-0" id="s3ProbeDurationNotice"></div>
+                </div>
+            </div>
+            <div class="modal-footer border-top pt-3" style="border-color: var(--border-color) !important;">
+                <button type="button" class="btn btn-secondary rounded-pill px-4" data-bs-dismiss="modal">Close</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- Modal: Diagnostic Connection Probe Checklist -->
 <div class="modal fade" id="modalGcpDiagnostics" tabindex="-1" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered">
@@ -452,6 +587,102 @@
                 btn.prop('disabled', false).html('<i class="bi bi-check-lg me-1"></i> Save Local Storage Config');
                 var err = xhr.responseJSON ? xhr.responseJSON.message : 'HTTP error ' + xhr.status;
                 showToast('Failed to save settings: ' + err, 'danger');
+            });
+        });
+
+        // Storage provider dropdown preset changer
+        $('#s3DriverSelect').on('change', function() {
+            var val = $(this).val();
+            if (val === 'minio') {
+                $('#s3EndpointInput').val('http://minio:9000');
+                $('#checkUsePathStyle').prop('checked', true);
+            } else if (val === 's3') {
+                $('#s3EndpointInput').val('https://s3.amazonaws.com');
+                $('#checkUsePathStyle').prop('checked', false);
+            } else if (val === 'gcp_s3') {
+                $('#s3EndpointInput').val('https://storage.googleapis.com');
+                $('#checkUsePathStyle').prop('checked', true);
+            }
+        });
+
+        // Save Primary S3 / MinIO Settings
+        $('#formS3Storage').on('submit', function(e) {
+            e.preventDefault();
+            var btn = $('#btnSaveS3');
+            var originalHtml = btn.html();
+            btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm me-1"></span> Saving...');
+
+            $.post(BASE_URL + 'admin/storage/save-s3', $(this).serialize(), function(res) {
+                btn.prop('disabled', false).html(originalHtml);
+                if (res.status === 'success') {
+                    showToast(res.message, 'success');
+                    setTimeout(function() { location.reload(); }, 1200);
+                } else {
+                    showToast(res.message, 'danger');
+                }
+            }).fail(function(xhr) {
+                btn.prop('disabled', false).html(originalHtml);
+                var err = xhr.responseJSON ? xhr.responseJSON.message : 'HTTP error ' + xhr.status;
+                showToast('Failed to save S3 settings: ' + err, 'danger');
+            });
+        });
+
+        // Test Primary S3 / MinIO Diagnostics Probe
+        $('#btnTestS3').on('click', function() {
+            var modal = new bootstrap.Modal(document.getElementById('modalS3Diagnostics'));
+            modal.show();
+
+            $('#s3ProbeLoading').show();
+            $('#s3ProbeResults').hide();
+
+            var postData = $('#formS3Storage').serialize();
+
+            $.post(BASE_URL + 'admin/storage/test-s3', postData, function(res) {
+                $('#s3ProbeLoading').hide();
+                $('#s3ProbeResults').show();
+
+                var overallBadge = $('#s3ProbeOverallBadge');
+                if (res.success) {
+                    overallBadge.attr('class', 'badge bg-success text-white rounded-pill px-3 py-1').text('OPERATIONAL');
+                    $('#s3ProbeOverallTitle').text('All Diagnostic Probes Passed');
+                } else {
+                    overallBadge.attr('class', 'badge bg-danger text-white rounded-pill px-3 py-1').text('FAILED');
+                    $('#s3ProbeOverallTitle').text('Diagnostic Failed: ' + (res.message || ''));
+                }
+
+                var stepsHtml = '';
+                if (res.steps && res.steps.length > 0) {
+                    res.steps.forEach(function(s) {
+                        var icon = 'bi-check-circle-fill text-success';
+                        var badge = '<span class="badge bg-success text-white px-2 py-0.5 rounded-pill small">PASS</span>';
+                        if (s.status === 'error') {
+                            icon = 'bi-x-circle-fill text-danger';
+                            badge = '<span class="badge bg-danger text-white px-2 py-0.5 rounded-pill small">FAIL</span>';
+                        } else if (s.status === 'warning') {
+                            icon = 'bi-exclamation-triangle-fill text-warning';
+                            badge = '<span class="badge bg-warning text-dark px-2 py-0.5 rounded-pill small">WARN</span>';
+                        }
+
+                        stepsHtml += '<div class="d-flex align-items-start gap-2 p-2.5 rounded border bg-light bg-opacity-25 small">' +
+                            '<i class="bi ' + icon + ' fs-6 mt-0.5"></i>' +
+                            '<div class="flex-grow-1">' +
+                                '<div class="d-flex justify-content-between align-items-center mb-0.5">' +
+                                    '<span class="fw-bold text-dark">' + s.name + '</span>' +
+                                    badge +
+                                '</div>' +
+                                '<div class="text-muted small">' + s.detail + '</div>' +
+                            '</div>' +
+                        '</div>';
+                    });
+                }
+                $('#s3ProbeStepsList').html(stepsHtml);
+                $('#s3ProbeDurationNotice').html('<i class="bi bi-clock me-1"></i> Total probe latency: <strong>' + (res.duration || 0) + ' seconds</strong>.');
+            }).fail(function(xhr) {
+                $('#s3ProbeLoading').hide();
+                $('#s3ProbeResults').show();
+                $('#s3ProbeOverallBadge').attr('class', 'badge bg-danger text-white rounded-pill px-3 py-1').text('REQUEST ERROR');
+                $('#s3ProbeOverallTitle').text('Diagnostic check failed with server error.');
+                $('#s3ProbeStepsList').html('<div class="alert alert-danger small mb-0">HTTP ' + xhr.status + ': ' + (xhr.responseJSON ? xhr.responseJSON.message : xhr.statusText) + '</div>');
             });
         });
 
