@@ -129,6 +129,9 @@ chmod 0666 /var/log/cron-run.log
 echo "Starting cron service..."
 service cron start || cron || echo "WARNING: Could not start cron daemon."
 
+# Stream background cron execution to container stdout so scheduled failures appear live in Docker logs
+(tail -n 0 -F /var/log/cron-run.log > /proc/1/fd/1 2>/dev/null) &
+
 # Force remove conflicting MPMs and ensure mpm_prefork is active
 echo "Configuring Apache MPM..."
 a2dismod mpm_event mpm_worker 2>/dev/null || true

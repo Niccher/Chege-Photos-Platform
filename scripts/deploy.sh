@@ -247,6 +247,7 @@ MINIO_PORT=$(get_env "MINIO_PORT" "9000")
 MINIO_CONSOLE_PORT=$(get_env "MINIO_CONSOLE_PORT" "9001")
 MINIO_ROOT_USER=$(get_env "MINIO_ROOT_USER" "minio_admin")
 MINIO_ROOT_PASSWORD=$(get_env "MINIO_ROOT_PASSWORD" "minio_password123")
+DOZZLE_PORT=$(get_env "DOZZLE_PORT" "8888")
 S3_BUCKET=$(get_env "S3_BUCKET" "chege-photos")
 STORAGE_DRIVER=$(get_env "STORAGE_DRIVER" "minio")
 
@@ -270,6 +271,7 @@ set_env "MINIO_PORT" "$MINIO_PORT"
 set_env "MINIO_CONSOLE_PORT" "$MINIO_CONSOLE_PORT"
 set_env "MINIO_ROOT_USER" "$MINIO_ROOT_USER"
 set_env "MINIO_ROOT_PASSWORD" "$MINIO_ROOT_PASSWORD"
+set_env "DOZZLE_PORT" "$DOZZLE_PORT"
 set_env "S3_BUCKET" "$S3_BUCKET"
 set_env "STORAGE_DRIVER" "$STORAGE_DRIVER"
 set_env "S3_ENDPOINT" "http://minio:9000"
@@ -298,6 +300,7 @@ log "REDIS_PORT                -> ${REDIS_PORT} (In-Memory Broker)"
 log "DB_PORT                   -> ${DB_PORT} (MySQL 8.4 Database)"
 log "MINIO_PORT                -> ${MINIO_PORT} (S3 Object Storage API)"
 log "MINIO_CONSOLE_PORT        -> ${MINIO_CONSOLE_PORT} (MinIO Web Console)"
+log "DOZZLE_PORT               -> ${DOZZLE_PORT} (Real-Time Container Log Viewer)"
 log "S3_BUCKET                 -> ${S3_BUCKET} (Default Storage Bucket)"
 
 # ── 5. Stop Old Containers & Clear Conflicts ──────────────────
@@ -305,7 +308,7 @@ section "5. Stopping Old Containers & Clearing Name Conflicts"
 docker compose down --remove-orphans 2>&1 | tail -3 || true
 
 # Explicitly remove legacy or conflicting container instances
-docker rm -f chege-mysql chege-redis chege-qdrant chege-minio chege-minio-init chege-photos-web chege-photos-ml 2>/dev/null || true
+docker rm -f chege-mysql chege-redis chege-qdrant chege-minio chege-minio-init chege-dozzle chege-photos-web chege-photos-ml 2>/dev/null || true
 log "Old containers stopped and explicit name conflicts cleared"
 
 # ── 6. Build & Start Containers ───────────────────────────────
@@ -314,8 +317,8 @@ if [ "${1:-}" = "--fast" ] || [ "${1:-}" = "--no-build" ]; then
     log "Fast startup mode active (skipping image rebuild)..."
     docker compose up -d
 else
-    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant, MinIO)..."
-    docker compose pull mysql redis qdrant minio minio-init 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
+    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant, MinIO, Dozzle)..."
+    docker compose pull mysql redis qdrant minio minio-init dozzle 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
 
     log "Building Web application container (PHP 8.3 + Apache)..."
     docker compose --progress=plain build web
@@ -330,7 +333,7 @@ log "Containers created and started (mysql, redis, qdrant, minio, web, ml)"
 
 echo ""
 echo -e "   ${BOLD}Docker Image Sizes:${RESET}"
-docker images --filter "reference=*chege*" --filter "reference=*mysql*" --filter "reference=*redis*" --filter "reference=*qdrant*" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
+docker images --filter "reference=*chege*" --filter "reference=*mysql*" --filter "reference=*redis*" --filter "reference=*qdrant*" --filter "reference=*minio*" --filter "reference=*dozzle*" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
 
 echo ""
 echo -e "   ${BOLD}Container Runtime Layer Sizes:${RESET}"
@@ -563,6 +566,8 @@ if [[ "$FINAL_WEB" =~ ^(200|301|302|307|403)$ ]]; then
     echo -e "  ${BOLD}Qdrant Web Console   :${RESET}  http://${DETECTED_IP}:${QDRANT_HTTP_PORT}/dashboard"
     echo -e "  ${BOLD}MinIO S3 API         :${RESET}  http://${DETECTED_IP}:${MINIO_PORT}"
     echo -e "  ${BOLD}MinIO Web Console    :${RESET}  http://${DETECTED_IP}:${MINIO_CONSOLE_PORT}  (User: ${YELLOW}${MINIO_ROOT_USER}${RESET} / Pass: ${YELLOW}${MINIO_ROOT_PASSWORD}${RESET})"
+    echo -e "  ${BOLD}Dozzle Visual Logs   :${RESET}  http://${DETECTED_IP}:${DOZZLE_PORT}"
+    echo -e "  ${BOLD}Host CLI Diagnostic  :${RESET}  bash scripts/logs.sh  (--errors | --dump | <service>)"
     echo -e "  ${BOLD}Redis Cache Server   :${RESET}  localhost:${REDIS_PORT}"
     echo -e "  ${BOLD}MySQL 8.4 Relational :${RESET}  localhost:${DB_PORT}"
     echo ""

@@ -8,6 +8,14 @@
 #   - ml:     Port 8000 (FastAPI Computer Vision Microservice)
 #   - redis:  Port 6379 (Redis In-Memory Cache & Job Queue Broker)
 #   - qdrant: Port 6333 (Qdrant Vector Database HTTP) / 6334 (gRPC)
+#   - minio:  Port 9000 (MinIO S3 API) / Port 9001 (MinIO Console)
+#   - dozzle: Port 8888 (Real-Time Container Log Viewer)
+
+x-logging: &default-logging
+  driver: "json-file"
+  options:
+    max-size: "20m"
+    max-file: "5"
 
 services:
   mysql:
@@ -18,7 +26,12 @@ services:
     environment:
       MYSQL_ROOT_PASSWORD: ${DB_ROOT_PASSWORD:-root_password}
       MYSQL_DATABASE: ${DB_NAME:-db_chege_photos}
-    command: --sql-mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+    command: >
+      mysqld
+      --sql-mode="STRICT_TRANS_TABLES,NO_ZERO_IN_DATE,NO_ZERO_DATE,ERROR_FOR_DIVISION_BY_ZERO,NO_ENGINE_SUBSTITUTION"
+      --log-error-verbosity=3
+      --slow_query_log=1
+      --long_query_time=2
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p${DB_ROOT_PASSWORD:-root_password}"]
       interval: 2s
@@ -32,6 +45,7 @@ services:
         aliases:
           - mysql
           - shared-mysql
+    logging: *default-logging
     restart: unless-stopped
 
   redis:
@@ -51,6 +65,7 @@ services:
       interval: 2s
       timeout: 2s
       retries: 5
+    logging: *default-logging
     restart: unless-stopped
 
   qdrant:
@@ -59,6 +74,8 @@ services:
     ports:
       - "${QDRANT_HTTP_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
+    environment:
+      QDRANT__LOG_LEVEL: INFO
     volumes:
       - qdrant_data:/qdrant/storage
     healthcheck:
@@ -72,10 +89,11 @@ services:
         aliases:
           - qdrant
           - ml-qdrant
+    logging: *default-logging
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: cgr.dev/chainguard/minio:latest
     container_name: chege-minio
     command: server /data --console-address ":9001"
     ports:
@@ -91,15 +109,17 @@ services:
         aliases:
           - minio
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
       interval: 3s
       timeout: 2s
       retries: 5
+    logging: *default-logging
     restart: unless-stopped
 
   minio-init:
-    image: minio/mc:latest
+    image: cgr.dev/chainguard/minio-client:latest
     container_name: chege-minio-init
+    user: "0"
     depends_on:
       - minio
     entrypoint: >
@@ -112,6 +132,7 @@ services:
       "
     networks:
       - chege-network
+    logging: *default-logging
 
   web:
     build:
@@ -164,6 +185,7 @@ services:
         aliases:
           - web
           - chege-photos-webapp
+    logging: *default-logging
     restart: unless-stopped
 
   ml:
@@ -225,6 +247,24 @@ services:
         aliases:
           - ml
           - ml-chege-photos
+    logging: *default-logging
+    restart: unless-stopped
+
+  dozzle:
+    image: amir20/dozzle:latest
+    container_name: chege-dozzle
+    ports:
+      - "${DOZZLE_PORT:-8888}:8080"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    environment:
+      DOZZLE_LEVEL: info
+      DOZZLE_NO_ANALYTICS: "true"
+    networks:
+      chege-network:
+        aliases:
+          - dozzle
+    logging: *default-logging
     restart: unless-stopped
 
 volumes:

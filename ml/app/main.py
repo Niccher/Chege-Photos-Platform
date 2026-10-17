@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 import logging
+import time
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from starlette.requests import Request
+from starlette.responses import Response
 
 from app.config import settings
 from app.database import ensure_qdrant_collection, init_db, get_db
@@ -118,6 +121,38 @@ app = FastAPI(
     version="0.2.0",
     lifespan=lifespan,
 )
+
+
+@app.middleware("http")
+async def log_request_lifecycle(request: Request, call_next):
+    start_time = time.perf_counter()
+    method = request.method
+    path = request.url.path
+    client_ip = request.client.host if request.client else "unknown"
+    is_probe = path in ("/health", "/", "/metrics")
+
+    try:
+        response: Response = await call_next(request)
+        duration_ms = (time.perf_counter() - start_time) * 1000
+
+        # Suppress repetitive healthy probes to avoid log bloat, but log if slow (>250ms)
+        if not is_probe or duration_ms > 250:
+            status_code = response.status_code
+            if status_code >= 500:
+                log.error("%s %s -> %s (%.2fms) [%s]", method, path, status_code, duration_ms, client_ip)
+            elif status_code >= 400:
+                log.warning("%s %s -> %s (%.2fms) [%s]", method, path, status_code, duration_ms, client_ip)
+            else:
+                log.info("%s %s -> %s (%.2fms) [%s]", method, path, status_code, duration_ms, client_ip)
+
+        return response
+    except Exception as exc:
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        log.exception(
+            "Unhandled Exception on %s %s after %.2fms [%s]: %s",
+            method, path, duration_ms, client_ip, exc
+        )
+        raise
 
 @app.get("/health", tags=["health"])
 def root_health():
