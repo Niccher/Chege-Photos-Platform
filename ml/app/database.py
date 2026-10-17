@@ -68,6 +68,7 @@ class Person(Base):
     __tablename__ = "tbl_people"
 
     id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, nullable=True, index=True)
     name = Column(String(255), nullable=True)
     thumbnail_face_id = Column(Integer, ForeignKey("tbl_face_encodings.id"), nullable=True)
     cluster_label = Column(Integer, nullable=True)
@@ -112,7 +113,7 @@ def ensure_qdrant_collection():
     collections = client.get_collections().collections
     existing = {c.name for c in collections}
 
-    from qdrant_client.models import VectorParams, Distance
+    from qdrant_client.models import VectorParams, Distance, PayloadSchemaType
 
     if settings.qdrant_collection not in existing:
         client.create_collection(
@@ -125,3 +126,34 @@ def ensure_qdrant_collection():
             collection_name=settings.qdrant_photo_collection,
             vectors_config=VectorParams(size=512, distance=Distance.COSINE),
         )
+
+    centroids_col = settings.qdrant_collection + "_centroids"
+    if centroids_col not in existing:
+        try:
+            client.create_collection(
+                collection_name=centroids_col,
+                vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+            )
+        except Exception:
+            pass
+
+    # Ensure payload indexes for high-speed multi-tenant isolation and fast deletion
+    for col in (settings.qdrant_collection, settings.qdrant_photo_collection):
+        for field in ("user_id", "photo_id"):
+            try:
+                client.create_payload_index(
+                    collection_name=col,
+                    field_name=field,
+                    field_schema=PayloadSchemaType.INTEGER,
+                )
+            except Exception:
+                pass
+
+    try:
+        client.create_payload_index(
+            collection_name=centroids_col,
+            field_name="user_id",
+            field_schema=PayloadSchemaType.INTEGER,
+        )
+    except Exception:
+        pass

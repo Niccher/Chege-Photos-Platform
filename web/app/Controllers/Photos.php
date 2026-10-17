@@ -1723,10 +1723,13 @@ class Photos extends BaseController
             ->getResultArray();
 
         $purged = 0;
-        $purgedIds = [];
+        $purgedIds = array_map(static fn($p) => (int) $p['id'], $photos);
+
+        // Clean up corresponding Qdrant vector embeddings and ML data BEFORE deleting MySQL rows
+        $this->deleteMlDataForPhotos($purgedIds);
+
         foreach ($photos as $photo) {
             $id = (int) $photo['id'];
-            $purgedIds[] = $id;
 
             // Clean related tables
             $db->table('tbl_album_photos')->where('photo_id', $id)->delete();
@@ -1751,9 +1754,6 @@ class Photos extends BaseController
             $db->table('tbl_photos')->where('id', $id)->delete();
             $purged++;
         }
-
-        // Clean up corresponding Qdrant vector embeddings and ML data
-        $this->deleteMlDataForPhotos($purgedIds);
 
         $this->clearSidebarCountsCache();
         helper('audit');

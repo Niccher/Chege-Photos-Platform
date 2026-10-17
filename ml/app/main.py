@@ -18,6 +18,7 @@ from app.api.search import router as search_router
 from app.api.models import router as models_router
 from app.api.metrics import router as metrics_router
 from app.api.config import router as config_router
+from app.api.maintenance import router as maintenance_router
 from app.ml.loader import load_models, get_model_status
 from app.ml.semantic_search import load_clip_model
 from app.ml import clustering as ml_clustering
@@ -136,3 +137,4 @@ app.include_router(clusters_router, dependencies=[Depends(get_api_key)])
 app.include_router(search_router, dependencies=[Depends(get_api_key)])
 app.include_router(models_router, dependencies=[Depends(get_api_key)])
 app.include_router(config_router, dependencies=[Depends(get_api_key)])
+app.include_router(maintenance_router, dependencies=[Depends(get_api_key)])

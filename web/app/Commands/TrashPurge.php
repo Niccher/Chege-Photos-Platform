@@ -53,6 +53,25 @@ class TrashPurge extends BaseCommand
 
         $purged = 0;
         $reclaimedBytes = 0;
+        $purgedPhotoIds = array_map(static fn($p) => (int) $p['id'], $photos);
+
+        // Purge ML and Qdrant vectors before deleting relational records
+        if (!empty($purgedPhotoIds)) {
+            helper('ml');
+            try {
+                $client = service('curlrequest', ['connect_timeout' => 3, 'timeout' => 15]);
+                $client->post(get_ml_url() . '/api/v1/faces/delete-by-photo-ids', [
+                    'headers' => [
+                        'Content-Type' => 'application/json',
+                        'X-API-KEY'    => get_ml_api_key(),
+                    ],
+                    'body' => json_encode(['photo_ids' => $purgedPhotoIds]),
+                ]);
+            } catch (\Throwable $e) {
+                log_message('warning', 'TrashPurge: Failed to clean ML vector data: ' . $e->getMessage());
+            }
+        }
+
         foreach ($photos as $photo) {
             $id = (int) $photo['id'];
             $reclaimedBytes += (float) ($photo['size'] ?? 0);

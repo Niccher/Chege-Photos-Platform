@@ -28,9 +28,51 @@ class MlCluster extends BaseCommand
                 ]
             ]);
 
-            $response = $client->post($mlUrl . '/api/v1/faces/cluster');
-            $body = json_decode($response->getBody(), true);
-            $outputMsg = isset($body['message']) ? $body['message'] : 'Face clustering triggered successfully.';
+            // Check if a specific user was requested via CLI argument (e.g. --user-id=1 or 1)
+            $targetUserId = null;
+            foreach ($params as $p) {
+                if (str_starts_with($p, '--user-id=')) {
+                    $targetUserId = (int) substr($p, 10);
+                } elseif (is_numeric($p)) {
+                    $targetUserId = (int) $p;
+                }
+            }
+
+            if ($targetUserId !== null) {
+                $userIds = [$targetUserId];
+            } else {
+                $userRows = $db->table('tbl_photos')
+                    ->select('user_id')
+                    ->distinct()
+                    ->where('user_id IS NOT NULL')
+                    ->where('deleted_at IS NULL')
+                    ->get()
+                    ->getResultArray();
+                $userIds = array_map(static fn($r) => (int) $r['user_id'], $userRows);
+            }
+
+            if (empty($userIds)) {
+                $response = $client->post($mlUrl . '/api/v1/faces/cluster');
+                $body = json_decode($response->getBody(), true);
+                $outputMsg = $body['message'] ?? 'Face clustering completed (no active users found).';
+            } else {
+                $messages = [];
+                foreach ($userIds as $uid) {
+                    CLI::write("Running face clustering for User ID #{$uid}...", 'cyan');
+                    try {
+                        $resp = $client->post($mlUrl . '/api/v1/faces/cluster?user_id=' . $uid);
+                        $b = json_decode($resp->getBody(), true);
+                        $msg = $b['message'] ?? 'Done';
+                        $clusters = $b['clusters'] ?? 0;
+                        $assigned = $b['assigned'] ?? 0;
+                        $messages[] = "User #{$uid}: {$clusters} clusters, {$assigned} assigned";
+                    } catch (\Throwable $err) {
+                        $messages[] = "User #{$uid} failed: " . $err->getMessage();
+                        CLI::write("User #{$uid} clustering failed: " . $err->getMessage(), 'yellow');
+                    }
+                }
+                $outputMsg = implode('; ', $messages);
+            }
 
             $duration = microtime(true) - $startTime;
             $db->table('sys_cron_logs')->insert([

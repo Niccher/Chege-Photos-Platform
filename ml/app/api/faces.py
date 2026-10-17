@@ -650,29 +650,54 @@ async def cluster_faces(
     ),
     min_cluster_size: int | None = Query(None, description="HDBSCAN min_cluster_size override"),
     min_samples: int | None = Query(None, description="HDBSCAN min_samples override"),
+    user_id: int | None = Query(None, description="Cluster only this user's faces"),
     db: Session = Depends(get_db),
 ):
     qdrant = get_qdrant()
-    vectors, point_ids = ml_clustering.scroll_all_vectors(qdrant, settings.qdrant_collection)
+    vectors, point_ids = ml_clustering.scroll_all_vectors(qdrant, settings.qdrant_collection, user_id=user_id)
 
     # ── Load pinned annotations (Human-in-the-Loop) ─────────────
     # 'confirm' annotations are hard constraints: the face stays pinned to its
     # person and is excluded from HDBSCAN re-assignment entirely.
-    pinned_confirm_rows = db.execute(
-        text(
-            "SELECT fa.face_encoding_id, fa.person_id "
-            "FROM face_annotation fa WHERE fa.action = 'confirm'"
-        )
-    ).fetchall()
+    if user_id is not None:
+        pinned_confirm_rows = db.execute(
+            text(
+                "SELECT fa.face_encoding_id, fa.person_id "
+                "FROM face_annotation fa "
+                "JOIN face_encoding fe ON fa.face_encoding_id = fe.id "
+                "JOIN tbl_photos ph ON fe.photo_id = ph.id "
+                "WHERE fa.action = 'confirm' AND ph.user_id = :uid"
+            ),
+            {"uid": user_id}
+        ).fetchall()
+    else:
+        pinned_confirm_rows = db.execute(
+            text(
+                "SELECT fa.face_encoding_id, fa.person_id "
+                "FROM face_annotation fa WHERE fa.action = 'confirm'"
+            )
+        ).fetchall()
     pinned_face_ids: dict[int, int] = {r[0]: r[1] for r in pinned_confirm_rows}
 
     # 'reject' annotations: face must NOT be assigned to a specific person.
-    reject_rows = db.execute(
-        text(
-            "SELECT fa.face_encoding_id, fa.person_id "
-            "FROM face_annotation fa WHERE fa.action = 'reject'"
-        )
-    ).fetchall()
+    if user_id is not None:
+        reject_rows = db.execute(
+            text(
+                "SELECT fa.face_encoding_id, fa.person_id "
+                "FROM face_annotation fa "
+                "JOIN face_encoding fe ON fa.face_encoding_id = fe.id "
+                "JOIN tbl_photos ph ON fe.photo_id = ph.id "
+                "WHERE fa.action = 'reject' AND ph.user_id = :uid"
+            ),
+            {"uid": user_id}
+        ).fetchall()
+    else:
+        reject_rows = db.execute(
+            text(
+                "SELECT fa.face_encoding_id, fa.person_id "
+                "FROM face_annotation fa WHERE fa.action = 'reject'"
+            )
+        ).fetchall()
     # Maps face_encoding_id -> set of forbidden person_ids
     rejected_persons: dict[int, set[int]] = {}
     for r in reject_rows:
@@ -689,13 +714,24 @@ async def cluster_faces(
         db.commit()
 
     # ── 1. Fetch unlocked faces (unassigned or with unnamed person, not pinned) ─
-    unlocked_rows = db.execute(
-        text(
-            "SELECT fe.qdrant_point_id, fe.id FROM face_encoding fe "
-            "LEFT JOIN person p ON fe.person_id = p.id "
-            "WHERE (fe.person_id IS NULL OR p.name IS NULL OR p.name = '')"
-        )
-    ).fetchall()
+    if user_id is not None:
+        unlocked_rows = db.execute(
+            text(
+                "SELECT fe.qdrant_point_id, fe.id FROM face_encoding fe "
+                "JOIN tbl_photos ph ON fe.photo_id = ph.id "
+                "LEFT JOIN person p ON fe.person_id = p.id "
+                "WHERE ph.user_id = :uid AND (fe.person_id IS NULL OR p.name IS NULL OR p.name = '')"
+            ),
+            {"uid": user_id}
+        ).fetchall()
+    else:
+        unlocked_rows = db.execute(
+            text(
+                "SELECT fe.qdrant_point_id, fe.id FROM face_encoding fe "
+                "LEFT JOIN person p ON fe.person_id = p.id "
+                "WHERE (fe.person_id IS NULL OR p.name IS NULL OR p.name = '')"
+            )
+        ).fetchall()
     unlocked_ids = {r[0] for r in unlocked_rows if r[0] not in pinned_qdrant_ids}
 
     # ── 2. Incremental fast-assign via centroid proximity ────────
@@ -708,6 +744,7 @@ async def cluster_faces(
             assignments = ml_clustering.assign_new_faces(
                 qdrant, new_vectors, new_pids,
                 confidence_threshold=settings.incremental_centroid_threshold,
+                user_id=user_id,
             )
             for pid, person_id in assignments.items():
                 if person_id is None:
@@ -736,6 +773,7 @@ async def cluster_faces(
     if not run_full:
         return {
             "mode": mode,
+            "user_id": user_id,
             "total_faces": len(vectors),
             "incremental_assigned": incremental_assigned,
             "unassigned_remaining": remaining_unlocked,
@@ -754,6 +792,7 @@ async def cluster_faces(
     if not filtered_vectors:
         return {
             "mode": mode,
+            "user_id": user_id,
             "total_faces": len(vectors),
             "incremental_assigned": incremental_assigned,
             "unassigned_remaining": 0,
@@ -765,8 +804,31 @@ async def cluster_faces(
         }
 
     # Detach face encodings from unnamed persons before deleting them to satisfy foreign keys
-    db.execute(text("UPDATE face_encoding fe JOIN person p ON fe.person_id = p.id SET fe.person_id = NULL WHERE p.name IS NULL OR p.name = ''"))
-    db.execute(text("DELETE FROM person WHERE name IS NULL OR name = ''"))
+    if user_id is not None:
+        db.execute(
+            text(
+                "UPDATE face_encoding fe "
+                "JOIN tbl_photos ph ON fe.photo_id = ph.id "
+                "JOIN person p ON fe.person_id = p.id "
+                "SET fe.person_id = NULL "
+                "WHERE ph.user_id = :uid AND (p.name IS NULL OR p.name = '')"
+            ),
+            {"uid": user_id}
+        )
+        try:
+            db.execute(
+                text(
+                    "DELETE p FROM person p "
+                    "WHERE (p.name IS NULL OR p.name = '') "
+                    "AND (p.user_id = :uid OR p.user_id IS NULL)"
+                ),
+                {"uid": user_id}
+            )
+        except Exception:
+            db.execute(text("DELETE FROM person WHERE name IS NULL OR name = ''"))
+    else:
+        db.execute(text("UPDATE face_encoding fe JOIN person p ON fe.person_id = p.id SET fe.person_id = NULL WHERE p.name IS NULL OR p.name = ''"))
+        db.execute(text("DELETE FROM person WHERE name IS NULL OR name = ''"))
     db.commit()
 
     result    = ml_clustering.run_hdbscan(filtered_vectors, min_cluster_size, min_samples)
@@ -777,6 +839,7 @@ async def cluster_faces(
     if n_clusters == 0:
         return {
             "mode": mode,
+            "user_id": user_id,
             "total_faces": len(vectors),
             "incremental_assigned": incremental_assigned,
             "full_hdbscan_run": True,
@@ -789,7 +852,7 @@ async def cluster_faces(
     unique_labels = set(labels) - {-1}
     label_to_person: dict[int, int] = {}
     for lbl in unique_labels:
-        person = Person(cluster_label=int(lbl))
+        person = Person(cluster_label=int(lbl), user_id=user_id)
         db.add(person)
         db.flush()
         label_to_person[lbl] = person.id
@@ -811,10 +874,11 @@ async def cluster_faces(
     db.commit()
 
     centroids = ml_clustering.compute_centroids(filtered_vectors, labels)
-    ml_clustering.store_centroids(centroids, label_to_person)
+    ml_clustering.store_centroids(centroids, label_to_person, user_id=user_id)
 
     return {
         "mode": mode,
+        "user_id": user_id,
         "total_faces": len(vectors),
         "pinned_faces": len(pinned_face_ids),
         "incremental_assigned": incremental_assigned,
@@ -1027,7 +1091,7 @@ def discard_photo_faces(
     if not photo_ids:
         raise HTTPException(400, "photo_id or photo_ids list required")
 
-    photo_ids = [int(pid) for pid in photo_ids]
+    photo_ids = [int(pid) for pid in photo_ids if str(pid).isdigit()]
 
     faces = db.query(FaceEncoding).filter(
         FaceEncoding.photo_id.in_(photo_ids)
@@ -1036,8 +1100,21 @@ def discard_photo_faces(
     qdrant_points = [f.qdrant_point_id for f in faces if f.qdrant_point_id]
     person_ids = list({f.person_id for f in faces if f.person_id is not None})
 
-    # 1. Delete face vectors from Qdrant
+    # 1. Delete face vectors from Qdrant by photo_id payload filter and explicit points
     qdrant = get_qdrant()
+    from qdrant_client.models import Filter, FieldCondition, MatchAny, FilterSelector
+    try:
+        qdrant.delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[FieldCondition(key="photo_id", match=MatchAny(any=photo_ids))]
+                )
+            ),
+        )
+    except Exception as exc:
+        log.warning("Could not delete face points by payload from Qdrant: %s", exc)
+
     for pid in qdrant_points:
         try:
             qdrant.delete(
@@ -1107,6 +1184,10 @@ def delete_by_photo_ids(
     if not photo_ids:
         raise HTTPException(400, "photo_ids list required")
 
+    photo_ids = [int(pid) for pid in photo_ids if str(pid).isdigit()]
+    if not photo_ids:
+        raise HTTPException(400, "valid integer photo_ids required")
+
     faces = db.query(FaceEncoding).filter(
         FaceEncoding.photo_id.in_(photo_ids)
     ).all()
@@ -1116,14 +1197,36 @@ def delete_by_photo_ids(
 
     # Delete from Qdrant
     qdrant = get_qdrant()
-    for pid in qdrant_points:
-        try:
-            qdrant.delete(
-                collection_name=settings.qdrant_collection,
-                points_selector=[pid],
+    from qdrant_client.models import Filter, FieldCondition, MatchAny, FilterSelector
+
+    # 1. Delete face vectors by photo_id payload filter (guaranteed cleanup even if DB rows were missing)
+    try:
+        qdrant.delete(
+            collection_name=settings.qdrant_collection,
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="photo_id",
+                            match=MatchAny(any=photo_ids)
+                        )
+                    ]
+                )
             )
-        except Exception:
-            pass
+        )
+    except Exception as exc:
+        log.warning("Failed to delete face vectors by photo_id payload: %s", exc)
+
+    # 2. Also delete by explicit point IDs if known
+    for pid in qdrant_points:
+        if pid:
+            try:
+                qdrant.delete(
+                    collection_name=settings.qdrant_collection,
+                    points_selector=[pid],
+                )
+            except Exception:
+                pass
 
     # Delete face encodings
     deleted_faces = db.query(FaceEncoding).filter(
@@ -1160,22 +1263,23 @@ def delete_by_photo_ids(
     except Exception as exc:
         log.warning("Failed to delete photo tags: %s", exc)
 
-    # Delete photo embeddings
+    # 3. Delete photo embeddings (CLIP vectors) from Qdrant
     try:
-        from qdrant_client.models import Filter, FieldCondition, MatchAny
         qdrant.delete(
             collection_name=settings.qdrant_photo_collection,
-            points_selector=Filter(
-                must=[
-                    FieldCondition(
-                        key="photo_id",
-                        match=MatchAny(any=photo_ids)
-                    )
-                ]
+            points_selector=FilterSelector(
+                filter=Filter(
+                    must=[
+                        FieldCondition(
+                            key="photo_id",
+                            match=MatchAny(any=photo_ids)
+                        )
+                    ]
+                )
             )
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        log.warning("Failed to delete photo embeddings by photo_id payload: %s", exc)
 
     # Delete photo scans
     deleted_scans = db.query(PhotoScan).filter(

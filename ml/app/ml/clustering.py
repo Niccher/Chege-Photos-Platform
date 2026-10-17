@@ -37,13 +37,20 @@ def ensure_collections():
         )
 
 
-def scroll_all_vectors(qdrant, collection: str):
+def scroll_all_vectors(qdrant, collection: str, user_id: int | None = None):
     offset: int | None = None
     vectors = []
     point_ids = []
+    scroll_filter = None
+    if user_id is not None:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        scroll_filter = Filter(
+            must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+        )
     while True:
         points, next_offset = qdrant.scroll(
             collection_name=collection,
+            scroll_filter=scroll_filter,
             limit=100,
             offset=offset,
             with_vectors=True,
@@ -225,46 +232,75 @@ def compute_centroids(vectors: list, labels: list) -> dict[int, list[float]]:
     return centroids
 
 
-def store_centroids(centroids: dict[int, list[float]], label_to_person: dict[int, int]):
+def store_centroids(centroids: dict[int, list[float]], label_to_person: dict[int, int], user_id: int | None = None):
     qdrant = get_qdrant()
     col = centroid_collection()
 
-    qdrant.delete_collection(collection_name=col)
-    qdrant.create_collection(
-        collection_name=col,
-        vectors_config=VectorParams(size=512, distance=Distance.COSINE),
-    )
+    from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
+
+    if user_id is not None:
+        try:
+            qdrant.delete(
+                collection_name=col,
+                points_selector=FilterSelector(
+                    filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))])
+                )
+            )
+        except Exception as exc:
+            log.warning("Could not delete old centroids for user %s: %s", user_id, exc)
+    else:
+        qdrant.delete_collection(collection_name=col)
+        qdrant.create_collection(
+            collection_name=col,
+            vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+        )
 
     points = []
     for lbl, person_id in label_to_person.items():
         vec = centroids.get(lbl)
         if vec is not None:
+            payload = {
+                "cluster_label": lbl,
+                "person_id": person_id,
+                "is_centroid": True,
+            }
+            if user_id is not None:
+                payload["user_id"] = user_id
             points.append(PointStruct(
                 id=str(uuid.uuid4()),
                 vector=vec,
-                payload={
-                    "cluster_label": lbl,
-                    "person_id": person_id,
-                    "is_centroid": True,
-                },
+                payload=payload,
             ))
     if points:
         qdrant.upsert(collection_name=col, points=points)
-        log.info("Stored %d centroid vectors", len(points))
+        log.info("Stored %d centroid vectors (user_id=%s)", len(points), user_id)
 
 
-def clear_centroids():
+def clear_centroids(user_id: int | None = None):
     qdrant = get_qdrant()
     col = centroid_collection()
-    try:
-        qdrant.delete_collection(collection_name=col)
-    except Exception:
-        pass
-    qdrant.create_collection(
-        collection_name=col,
-        vectors_config=VectorParams(size=512, distance=Distance.COSINE),
-    )
-    log.info("Cleared centroid collection")
+    if user_id is not None:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue, FilterSelector
+        try:
+            qdrant.delete(
+                collection_name=col,
+                points_selector=FilterSelector(
+                    filter=Filter(must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))])
+                )
+            )
+        except Exception:
+            pass
+        log.info("Cleared centroids for user %s", user_id)
+    else:
+        try:
+            qdrant.delete_collection(collection_name=col)
+        except Exception:
+            pass
+        qdrant.create_collection(
+            collection_name=col,
+            vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+        )
+        log.info("Cleared centroid collection")
 
 
 # ── Incremental clustering helpers ──────────────────────────────
@@ -284,6 +320,7 @@ def assign_new_faces(
     new_vectors: list[list[float]],
     new_point_ids: list[str],
     confidence_threshold: float = 0.80,
+    user_id: int | None = None,
 ) -> dict[str, int | None]:
     """Fast centroid-based assignment for newly scanned face embeddings.
 
@@ -307,10 +344,18 @@ def assign_new_faces(
         # No centroids yet — nothing to assign against
         return {pid: None for pid in new_point_ids}
 
+    query_filter = None
+    if user_id is not None:
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        query_filter = Filter(
+            must=[FieldCondition(key="user_id", match=MatchValue(value=user_id))]
+        )
+
     for vec, pid in zip(new_vectors, new_point_ids):
         hits = qdrant.search(
             collection_name=col,
             query_vector=vec,
+            query_filter=query_filter,
             limit=1,
             with_payload=True,
         )
@@ -321,8 +366,8 @@ def assign_new_faces(
 
     assigned = sum(1 for v in assignments.values() if v is not None)
     log.info(
-        "Incremental assignment: %d/%d faces matched centroid (threshold=%.2f)",
-        assigned, len(new_point_ids), confidence_threshold,
+        "Incremental assignment: %d/%d faces matched centroid (threshold=%.2f, user_id=%s)",
+        assigned, len(new_point_ids), confidence_threshold, user_id,
     )
     return assignments
 

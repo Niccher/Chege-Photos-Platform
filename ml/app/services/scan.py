@@ -47,18 +47,30 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
 
     from app.config import settings as _cfg
     _db_schema = _cfg.effective_db_name
+    user_id = None
     try:
         photo = db.execute(
-            text(f"SELECT id, path, ignore_faces FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+            text(f"SELECT id, path, ignore_faces, user_id FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
             {"pid": photo_id},
         ).fetchone()
         ignore_faces = bool(photo.ignore_faces) if hasattr(photo, "ignore_faces") else bool(photo[2])
+        raw_uid = photo.user_id if hasattr(photo, "user_id") else (photo[3] if len(photo) > 3 else None)
+        user_id = int(raw_uid) if raw_uid is not None else None
     except Exception:
-        photo = db.execute(
-            text(f"SELECT id, path FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
-            {"pid": photo_id},
-        ).fetchone()
-        ignore_faces = False
+        try:
+            photo = db.execute(
+                text(f"SELECT id, path, user_id FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+                {"pid": photo_id},
+            ).fetchone()
+            ignore_faces = False
+            raw_uid = photo.user_id if hasattr(photo, "user_id") else (photo[2] if len(photo) > 2 else None)
+            user_id = int(raw_uid) if raw_uid is not None else None
+        except Exception:
+            photo = db.execute(
+                text(f"SELECT id, path FROM `{_db_schema}`.tbl_photos WHERE id = :pid"),
+                {"pid": photo_id},
+            ).fetchone()
+            ignore_faces = False
 
     if not photo:
         raise ValueError(f"Photo {photo_id} not found")
@@ -137,6 +149,7 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
                 vector=embedding,
                 payload={
                     "photo_id": photo_id,
+                    "user_id": user_id,
                     "face_index": i,
                     "bbox": {
                         "x": float(face.bbox[0]),
@@ -189,7 +202,10 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
             points=[PointStruct(
                 id=str(uuid.uuid4()),
                 vector=clip_emb,
-                payload={"photo_id": photo_id}
+                payload={
+                    "photo_id": photo_id,
+                    "user_id": user_id,
+                }
             )]
         )
     except Exception as exc:
@@ -203,7 +219,10 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
                 points=[PointStruct(
                     id=str(uuid.uuid4()),
                     vector=clip_emb,
-                    payload={"photo_id": photo_id}
+                    payload={
+                        "photo_id": photo_id,
+                        "user_id": user_id,
+                    }
                 )]
             )
             log.info("CLIP embedding succeeded on retry for photo %d", photo_id)

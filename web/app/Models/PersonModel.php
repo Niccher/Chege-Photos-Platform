@@ -12,7 +12,7 @@ class PersonModel extends Model
     protected $returnType       = 'array';
     protected $useSoftDeletes   = false;
     protected $protectFields    = true;
-    protected $allowedFields    = ['name', 'thumbnail_face_id', 'cluster_label'];
+    protected $allowedFields    = ['user_id', 'name', 'thumbnail_face_id', 'cluster_label'];
 
     protected $useTimestamps = true;
     protected $createdField  = 'created_at';

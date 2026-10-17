@@ -35,13 +35,53 @@ class SyncQdrantVectors extends BaseCommand
             CLI::write("Pruned {$orphanedCount} orphaned face encoding record(s) missing parent photos.", 'yellow');
         }
 
-        // 2. Check unassigned face count
+        // 2. Trigger Qdrant reconciliation via ML microservice
+        CLI::write('Triggering vector reconciliation on ML microservice & Qdrant...', 'cyan');
+        $mlPurgedPhotoVectors = 0;
+        $mlPurgedFaceVectors = 0;
+        $mlScannedPhotoVectors = 0;
+        $mlScannedFaceVectors = 0;
+
+        try {
+            helper('ml');
+            $client = service('curlrequest', [
+                'connect_timeout' => 5,
+                'timeout'         => 180,
+                'headers'         => [
+                    'X-API-KEY' => get_ml_api_key(),
+                ]
+            ]);
+
+            $response = $client->post(get_ml_url() . '/api/v1/maintenance/reconcile-vectors');
+            if ($response->getStatusCode() === 200) {
+                $data = json_decode($response->getBody(), true);
+                $mlPurgedPhotoVectors  = $data['photo_embeddings']['orphans_deleted'] ?? 0;
+                $mlPurgedFaceVectors   = $data['face_embeddings']['orphans_deleted'] ?? 0;
+                $mlScannedPhotoVectors = $data['photo_embeddings']['total_scanned'] ?? 0;
+                $mlScannedFaceVectors  = $data['face_embeddings']['total_scanned'] ?? 0;
+
+                CLI::write("Qdrant Audit: Scanned {$mlScannedPhotoVectors} photo vectors (purged {$mlPurgedPhotoVectors} orphans), scanned {$mlScannedFaceVectors} face vectors (purged {$mlPurgedFaceVectors} orphans).", 'green');
+            }
+        } catch (\Throwable $t) {
+            CLI::write('Notice: ML reconcile-vectors call encountered an error: ' . $t->getMessage(), 'yellow');
+        }
+
+        // 3. Check unassigned face count
         $totalFaces = $db->table('tbl_face_encodings')->countAllResults();
         $unassignedFaces = $db->table('tbl_face_encodings')->where('person_id IS NULL')->countAllResults();
         $totalPersons = $db->table('tbl_people')->countAllResults();
 
         $duration = round(microtime(true) - $startTime, 3);
-        $outputMsg = sprintf("Vector audit completed in %ss. Total faces: %d, Unassigned: %d, Persons: %d. Purged orphans: %d.", $duration, $totalFaces, $unassignedFaces, $totalPersons, $orphanedCount);
+        $outputMsg = sprintf(
+            "Vector audit completed in %ss. Faces: %d (Unassigned: %d), Persons: %d. Purged DB orphans: %d, Purged Qdrant photo vectors: %d, Purged Qdrant face vectors: %d.",
+            $duration,
+            $totalFaces,
+            $unassignedFaces,
+            $totalPersons,
+            $orphanedCount,
+            $mlPurgedPhotoVectors,
+            $mlPurgedFaceVectors
+        );
 
         $db->table('sys_cron_logs')->insert([
             'job_name'         => 'qdrant:sync-vectors',

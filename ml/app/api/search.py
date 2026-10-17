@@ -15,23 +15,26 @@ router = APIRouter(prefix="/api/v1/search", tags=["search"])
 def semantic_search_endpoint(
     query: str = Query(..., description="Natural language query"),
     limit: int = Query(20, ge=1, le=100),
-    user_id: int | None = Query(None),
+    user_id: int | None = Query(None, description="Target User ID for multi-tenant isolation"),
 ):
+    if user_id is None or user_id <= 0:
+        return {
+            "query": query,
+            "results": []
+        }
     try:
         query_vec = semantic_search.encode_text(query)
         qdrant = get_qdrant()
         
-        query_filter = None
-        if user_id is not None:
-            from qdrant_client.models import Filter, FieldCondition, MatchValue
-            query_filter = Filter(
-                must=[
-                    FieldCondition(
-                        key="user_id",
-                        match=MatchValue(value=user_id)
-                    )
-                ]
-            )
+        from qdrant_client.models import Filter, FieldCondition, MatchValue
+        query_filter = Filter(
+            must=[
+                FieldCondition(
+                    key="user_id",
+                    match=MatchValue(value=user_id)
+                )
+            ]
+        )
 
         hits = qdrant.search(
             collection_name=settings.qdrant_photo_collection,
@@ -62,13 +65,29 @@ def semantic_search_endpoint(
 def similar_photos_endpoint(
     photo_id: int,
     limit: int = Query(20, ge=1, le=100),
-    user_id: int | None = Query(None),
+    user_id: int | None = Query(None, description="Target User ID for multi-tenant isolation"),
     x_webapp_url: str | None = Header(None, alias="X-Webapp-Url"),
 ):
     """Find visually and semantically similar photos using CLIP embeddings."""
     try:
         qdrant = get_qdrant()
         from qdrant_client.models import Filter, FieldCondition, MatchValue
+
+        # Resolve photo owner to enforce multi-tenant isolation
+        if user_id is None:
+            from app.database import get_db
+            from sqlalchemy import text
+            try:
+                db_lookup = next(get_db())
+                p_owner = db_lookup.execute(
+                    text(f"SELECT user_id FROM `{settings.effective_db_name}`.tbl_photos WHERE id = :pid"),
+                    {"pid": photo_id}
+                ).fetchone()
+                db_lookup.close()
+                if p_owner and p_owner[0] is not None:
+                    user_id = int(p_owner[0])
+            except Exception:
+                pass
 
         # 1. Attempt to fetch pre-computed CLIP vector from Qdrant
         photo_filter = Filter(
