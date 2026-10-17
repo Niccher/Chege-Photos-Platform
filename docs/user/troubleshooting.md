@@ -78,9 +78,51 @@ docker compose exec chege-photos chown -R www-data:www-data /var/www/html/writab
 
 ## 5. Android Emulator Cannot Reach Local WebApp
 
-**Symptom**: Android client fails with `java.net.ConnectException: Failed to connect to localhost/127.0.0.1:9005`.
+**Symptom**: Android client fails with `java.net.ConnectException: Failed to connect to localhost/127.0.0.1`.
 
 **Cause**: In the Android emulator, `localhost` refers to the emulator itself, not your host PC.
 
 **Solution**:
-Configure the Android app's base URL to `http://10.0.2.2:9005/`. On a physical phone connected over Wi-Fi, use your machine's local LAN IP address (e.g. `http://192.168.100.X:9005/`).
+Configure the Android app's base URL to `http://10.0.2.2/` (standard port 80). On a physical phone connected over Wi-Fi, use your machine's local LAN IP address (e.g. `http://192.168.1.X/`).
+
+---
+
+## 6. Diagnosing Stack Errors via `scripts/logs.sh`
+
+Chege Photos Platform includes an all-in-one diagnostic utility to pinpoint failures across all 7 containers:
+
+```bash
+# 1. Scan across all containers for recent exceptions, tracebacks, or deadlocks:
+bash scripts/logs.sh --errors
+
+# 2. Tail a specific service live (web, ml, mysql, redis, qdrant, minio, dozzle):
+bash scripts/logs.sh ml
+bash scripts/logs.sh web
+
+# 3. Export a complete diagnostic bundle for troubleshooting:
+bash scripts/logs.sh --dump
+# Produces ./diagnostics/chege-diagnostics-YYYYMMDD.tar.gz
+```
+
+---
+
+## 7. MinIO (9001) or Dozzle (8888) Connection Timing Out on GCP
+
+**Symptom**: Navigating to `http://<GCP-VM-IP>:9001` or `http://<GCP-VM-IP>:8888` times out or takes too long to load.
+
+**Cause**: Google Cloud VPC Firewall blocks non-standard incoming ports by default.
+
+**Solution**:
+1. **Option A — Update GCP Firewall Rule**:
+   Run in Google Cloud Shell to allow MinIO Console (`9001`):
+   ```bash
+   gcloud compute firewall-rules update allow-chege-admin-tools \
+       --rules=tcp:9001 \
+       --source-ranges=0.0.0.0/0
+   ```
+2. **Option B — Private SSH Tunnel (Zero Exposure — Recommended for Dozzle)**:
+   Do NOT open Dozzle (8888) to the public web. Tunnel it securely from your local machine:
+   ```bash
+   ssh -L 9001:localhost:9001 -L 8888:localhost:8888 user@<GCP-VM-IP>
+   ```
+   Then open `http://localhost:9001` (MinIO) and `http://localhost:8888` (Dozzle) privately in your browser.

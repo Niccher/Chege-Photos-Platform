@@ -34,6 +34,8 @@
         <span class="tech-badge"><i class="bi bi-fonts me-1"></i>Tesseract OCR</span>
         <span class="tech-badge"><i class="bi bi-diagram-3 me-1"></i>Qdrant Vector DB</span>
         <span class="tech-badge"><i class="bi bi-hdd-network me-1"></i>Redis 7</span>
+        <span class="tech-badge"><i class="bi bi-cloud-arrow-up me-1"></i>MinIO S3 / Multi-Cloud</span>
+        <span class="tech-badge"><i class="bi bi-journal-text me-1"></i>Two-Tier Observability</span>
         <span class="tech-badge"><i class="bi bi-phone me-1"></i>Kotlin / Compose</span>
         <span class="tech-badge"><i class="bi bi-box me-1"></i>Docker Compose</span>
     </div>
@@ -116,7 +118,17 @@
         <div class="card-pub">
             <div class="stack-icon"><i class="bi bi-box-seam"></i></div>
             <h5>Turnkey Docker Deployment</h5>
-            <p>Single <code>docker compose up --build -d</code> deploys MySQL 8.4, Redis 7, Qdrant Vector DB, FastAPI ML, and WebApp. Features automated model pre-downloads and Docker layer caching.</p>
+            <p>Single <code>docker compose up --build -d</code> deploys MySQL 8.4, Redis 7, Qdrant Vector DB, MinIO, FastAPI ML, and WebApp with automated model downloads.</p>
+        </div>
+        <div class="card-pub">
+            <div class="stack-icon"><i class="bi bi-cloud-check"></i></div>
+            <h5>MinIO S3 & Multi-Cloud Storage</h5>
+            <p>Decoupled object storage powered by MinIO with AWS SigV4 authorization. Supports seamless failover and offsite disaster recovery mirroring to AWS S3 or Google Cloud Storage.</p>
+        </div>
+        <div class="card-pub">
+            <div class="stack-icon"><i class="bi bi-speedometer2"></i></div>
+            <h5>Two-Tier Logging & Observability</h5>
+            <p>Production monitoring with Dozzle real-time visual streaming, microsecond ML request latency tracking, framework stderr streaming, and 100MB disk-capped log rotation.</p>
         </div>
     </div>
 </section>

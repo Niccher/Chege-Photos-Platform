@@ -26,7 +26,48 @@ public/
 
 ---
 
-## 2. Hybrid Ephemeral Rehydration Pattern (`MediaFallback.php`)
+## 2. Multi-Cloud & S3 Object Storage Abstraction (`StorageManager.php`)
+
+Chege Photos Platform decouples binary media storage from local container disks using a unified storage abstraction layer:
+
+1. **Default Storage Engine (MinIO / S3)**:
+   - Media (originals and thumbnails) is stored in S3-compatible buckets (`chege-photos`).
+   - Out-of-the-box local orchestration runs **MinIO** (`cgr.dev/chainguard/minio`) on port `9000` (S3 API) and `9001` (Web Console).
+   - All HTTP requests implement standard **AWS Signature Version 4 (SigV4)** signing with path-style URL addressing.
+2. **Multi-Cloud Backups (AWS S3 & Google Cloud Storage)**:
+   - Configurable via `STORAGE_DRIVER` (`minio`, `s3`, `gcp`, or `local`).
+   - Optional offsite disaster recovery synchronization to Google Cloud Storage (`GCP_BUCKET`) via `php spark cloud:sync`.
+3. **ML Microservice Shared Access**:
+   - The ML service reads objects directly via S3 streaming / pre-signed URLs or via the read-only volume mount `/app/uploads:ro`.
+
+---
+
+## 3. Redis 7 In-Memory Session & Queue Layer
+
+Redis 7 operates as the platform's high-speed in-memory engine:
+
+* **Primary Session Handler**: User web sessions are managed in Redis with low-millisecond lookup latency. In case of Redis restarts, the platform automatically falls back to MySQL `ci_sessions`.
+* **Asynchronous Queue Broker**: Offloads heavy tasks (face scan jobs, thumbnail pre-warming, vector sync) to background queues, keeping HTTP response times under 50ms.
+
+---
+
+## 4. Qdrant Vector Search Engine
+
+High-dimensional embeddings are indexed in Qdrant for real-time similarity search:
+
+* **`face_embeddings` Collection**:
+  - Dimension: `512` (ArcFace L2-normalized float32 unit vectors).
+  - Distance Metric: `Cosine`.
+  - Payloads: `user_id`, `photo_id`, `box`, `confidence`, `det_score`.
+* **`clip_embeddings` Collection**:
+  - Dimension: `512` (OpenAI CLIP ViT-B/32 multimodal vision vectors).
+  - Distance Metric: `Cosine`.
+  - Natural-language semantic queries are embedded on-the-fly and queried against image vectors in < 15ms.
+* **Multi-Tenant Isolation**: Every vector query enforces a strict filter on `user_id` to prevent cross-account information leakage.
+
+---
+
+## 5. Hybrid Ephemeral Rehydration Pattern (`MediaFallback.php`)
 
 To support cloud platforms with ephemeral disks (Railway, Render, Fly.io), the WebApp implements the **Hybrid On-Demand Rehydration Pattern**:
 
@@ -37,12 +78,12 @@ To support cloud platforms with ephemeral disks (Railway, Render, Fly.io), the W
    $sanitized = array_map('basename', $segments);
    $cleanPath = implode('/', $sanitized);
    ```
-3. **Bucket Retrieval**: `GcpStorageService` streams the object from Google Cloud Storage.
+3. **Bucket Retrieval**: `StorageManager` / `GcpStorageService` streams the object from S3/MinIO/GCP.
 4. **Local Cache Rehydration**: The parent directories (`users/{id}/{YYYY}/{MM}/`) are automatically created on local disk (`mkdir($dir, 0777, true)`), and the file is written to local disk for subsequent zero-overhead requests before streaming to the client.
 
 ---
 
-## 3. Database Schema Reference (MySQL 8.4)
+## 6. Database Schema Reference (MySQL 8.4)
 
 Managed via 24 versioned CodeIgniter migrations in `app/Database/Migrations/`:
 

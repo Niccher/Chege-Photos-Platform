@@ -13,6 +13,8 @@ Unified backend platform for self-hosted personal photo and video management fea
 |---|---|---|---|
 | **Web Application** | [http://localhost](http://localhost) | `80` | Web UI & Admin console (`admin@example.com` / `admin_password`) |
 | **ML Microservice** | [http://localhost:8000/docs](http://localhost:8000/docs) | `8000` | FastAPI vision API, Swagger `/docs` |
+| **MinIO S3 Object Storage** | [http://localhost:9001](http://localhost:9001) | `9000` / `9001` | S3 API (9000), Web Console (9001) (`minio_admin` / `minio_password123`) |
+| **Dozzle Visual Logs** | [http://localhost:8888](http://localhost:8888) | `8888` | Real-time container log console (split-screen, regex search) |
 | **Redis Cache & Queue** | `localhost:6379` | `6379` | In-memory cache & durable background job broker |
 | **Qdrant Vector DB**| [http://localhost:6333/dashboard](http://localhost:6333/dashboard) | `6333` / `6334` | Vector search engine (HTTP: 6333, gRPC: 6334) |
 | **MySQL 8.4** | `localhost:3306` | `3306` | Relational database (`db_chege_photos` / `root_password`) |
@@ -109,20 +111,25 @@ Chege Photos is organized into a clean **two-repository arrangement**:
          │
          │ (HTTP / Bearer Token - standard port 80)
          ▼
-┌────────────────────────────────────────────────────────┐
-│ Chege Photos Platform    (Repository: Chege-Photos-Platform)
-│                                                        │
-│  [ Web / REST Gateway ] (Port 80) ────► [ MySQL 8.4 ]  │
-│         │         │                     ▲ (Port 3306)  │
-│         │         ▼                     │              │
-│         │    [ Redis Agent ] (Port 6379)│              │
-│         │         ▲                     │              │
-│         ▼         │                     │              │
-│  [ ML Microservice ] (Port 8000) ───────┤              │
-│         │                                              │
-│         ▼                                              │
-│  [ Qdrant Vector DB ] (Port 6333)                      │
-└────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────┐
+│ Chege Photos Platform            (Repository: Chege-Photos-Platform)   │
+│                                                                        │
+│  [ Web / REST Gateway ] (Port 80) ────► [ MySQL 8.4 ] (Port 3306)      │
+│         │         │         │                                          │
+│         │         │         ├─────────► [ MinIO S3 Storage ] (Port 9000│
+│         │         │         │           (Multi-Cloud / GCP S3 Backup)  │
+│         │         ▼         │                                          │
+│         │    [ Redis 7 ] (Port 6379)                                   │
+│         │    (Sessions, Cache & Job Broker)                            │
+│         ▼                   ▲                                          │
+│  [ ML Microservice ] (Port 8000)                                       │
+│         │                   │                                          │
+│         ├───────────────────┘                                          │
+│         ▼                                                              │
+│  [ Qdrant Vector DB ] (Port 6333)                                      │
+│                                                                        │
+│  [ Dozzle Visual Logs ] (Port 8888) ──► Real-Time Container Streaming  │
+└────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Sibling Ecosystem Repositories

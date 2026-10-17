@@ -127,6 +127,18 @@ docker compose ps</pre>
                     <td>Database: <code>db_chege_photos</code> / Root: <code>root_password</code></td>
                 </tr>
                 <tr>
+                    <td><strong>MinIO S3 Object Storage</strong></td>
+                    <td><code>9000</code> / <code>9001</code></td>
+                    <td>HTTP</td>
+                    <td><code>http://localhost:9001</code> (Web Console: <code>minio_admin</code> / <code>minio_password123</code>)</td>
+                </tr>
+                <tr>
+                    <td><strong>Dozzle Visual Logs</strong></td>
+                    <td><code>8888</code></td>
+                    <td>HTTP</td>
+                    <td><code>http://localhost:8888</code> (Real-time split-screen container logs)</td>
+                </tr>
+                <tr>
                     <td><strong>Redis 7 Queue & Cache</strong></td>
                     <td><code>6379</code></td>
                     <td>TCP</td>
@@ -151,13 +163,16 @@ docker compose ps</pre>
     <div class="row g-4">
         <div class="col-md-6">
             <div class="card-pub h-100">
-                <h5>Health Check Probes</h5>
+                <h5>Health Check & Diagnostics</h5>
                 <pre class="code-block"># Verify Web service health:
 curl -s http://localhost/api/v1/health
 
 # Verify ML microservice & models:
-curl -s http://localhost:8000/health</pre>
-                <p style="font-size:0.85rem; color:var(--text-muted);" class="mt-2 mb-0">Both commands should return <code>"status": "healthy"</code> or HTTP 200.</p>
+curl -s http://localhost:8000/health
+
+# Scan across all 7 containers for errors:
+bash scripts/logs.sh --errors</pre>
+                <p style="font-size:0.85rem; color:var(--text-muted);" class="mt-2 mb-0">Both endpoints return <code>"status": "healthy"</code> or HTTP 200.</p>
             </div>
         </div>
         <div class="col-md-6">

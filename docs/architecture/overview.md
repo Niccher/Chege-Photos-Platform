@@ -24,22 +24,28 @@ C4Context
   Rel(android, webapp, "Syncs photos and queries API", "HTTPS / 8-char Bearer Token")
   Rel(admin, webapp, "Accesses admin console", "HTTPS / Session Cookie")
   Rel(webapp, mysql, "Reads and writes records", "TCP 3306 / MySQL Wire")
-  Rel(webapp, ml, "Triggers AI scan / search proxy", "HTTP 9051 / cURL")
-  Rel(ml, qdrant, "Upserts and queries vectors", "gRPC 6334 / HTTP 6333")
+  Rel(webapp, redis, "Caches sessions & dispatches jobs", "TCP 6379 / Redis Protocol")
+  Rel(webapp, minio, "Stores and retrieves media objects", "HTTP 9000 / AWS SigV4")
+  Rel(webapp, ml, "Triggers AI scan / search proxy", "HTTP 8000 / REST + X-API-KEY")
+  Rel(ml, qdrant, "Upserts and queries vectors", "HTTP 6333 / gRPC 6334")
   Rel(ml, mysql, "Persists face metadata & tags", "TCP 3306 / SQLAlchemy")
-  Rel(webapp, gcs, "Mirrors media and rehydrates", "HTTPS 443 / JSON REST")
+  Rel(ml, minio, "Resolves media for inference", "HTTP 9000 / AWS SigV4")
+  Rel(webapp, gcs, "Mirrors media for offsite disaster backup", "HTTPS 443 / JSON REST")
 ```
 
 ---
 
 ## 2. Container Topology
 
-| Container / Service | Technology | Port (Internal) | Port (Host / Dev) | Responsibility |
+| Container / Service | Technology | Port (Internal) | Standard Production Port | Responsibility |
 |---|---|---|---|---|
-| `chege-photos-webapp` | PHP 8.3 Apache | `80` | `9005` | Web controllers, views, REST API, fallback hydration, cron runner |
-| `shared-mysql` | MySQL 8.4 | `3306` | `9306` | Relational storage for users, photos, albums, and system logs |
-| `ml-service` (optional) | FastAPI / PyTorch | `9051` | `9051` | Asynchronous face detection, object tagging, and vector generation |
-| `ml-qdrant` (optional) | Qdrant | `6333` / `6334` | `9052` / `9053` | Sub-second HNSW cosine vector similarity indexing |
+| `chege-photos-web` | PHP 8.3 / Apache | `80` | `80` | Web controllers, views, REST API, fallback hydration, cron runner |
+| `chege-photos-ml` | FastAPI / PyTorch | `8000` | `8000` | Face detection (ArcFace), CLIP semantic search, YOLOv8 tagging |
+| `chege-minio` | MinIO Object Storage | `9000` / `9001` | `9000` / `9001` | Primary S3-compatible photo/thumbnail storage + Web Console |
+| `chege-redis` | Redis 7 Alpine | `6379` | `6379` | In-memory session store with MySQL fallback, queue broker |
+| `chege-qdrant` | Qdrant Vector DB | `6333` / `6334` | `6333` / `6334` | Sub-second HNSW cosine vector similarity indexing |
+| `chege-mysql` | MySQL 8.4 | `3306` | `3306` | Relational storage for users, photos, albums, and system logs |
+| `chege-dozzle` | Dozzle Go binary | `8080` | `8888` | Real-time visual log inspection and multi-container live tail |
 
 ---
 

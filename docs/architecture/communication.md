@@ -6,14 +6,17 @@ Protocols, communication tables, sequence diagrams, and failure strategies conne
 
 ## 1. Inter-Service Protocol Matrix
 
-| Source | Target | Transport | Authentication | Base URL (Dev) | Timeout & Fallback Strategy |
+| Source | Target | Transport | Authentication | Standard URL | Timeout & Fallback Strategy |
 |---|---|---|---|---|---|
-| **Browser** | **WebApp** | HTTPS + Cookie | Shield Session Cookie | `http://localhost:9005` | CSRF token validation; 302 redirect to `/login` if unauthenticated. |
-| **Android** | **WebApp** | HTTPS / REST | Bearer Token (`tbl_auth_tokens`) | `http://10.0.2.2:9005` | Returns 401 JSON; app queues actions locally in Room database. |
-| **WebApp** | **MySQL** | TCP 3306 | MySQL User/Password | `mysql:3306` | Connection wait loop in `entrypoint.sh` with 30 retries. |
-| **WebApp** | **ML Service** | HTTP/1.1 (cURL) | Header `X-API-KEY` | `http://ml-chege-photos:9051` | Non-blocking async (`100ms` timeout); upload succeeds if ML down. |
-| **ML Service** | **WebApp** | HTTP/1.1 | Session / Internal HMAC | `http://chege-photos:80` | On-demand fallback hydration streams missing images from WebApp. |
-| **WebApp** | **Google Cloud** | HTTPS 443 | Service Account OAuth2 Bearer | `storage.googleapis.com` | Photos flagged `gcp_synced=0` and retried via `php spark cloud:sync`. |
+| **Browser** | **WebApp** | HTTP / HTTPS | Shield Session Cookie | `http://localhost:80` | CSRF token validation; 302 redirect to `/login` if unauthenticated. |
+| **Android** | **WebApp** | HTTP / REST | Bearer Token (`tbl_auth_tokens`) | `http://10.0.2.2:80` (or host IP) | Returns 401 JSON; app queues actions locally in Room database. |
+| **WebApp** | **MySQL** | TCP 3306 | MySQL User/Password | `mysql:3306` | Connection wait loop in `entrypoint.sh` with retries. |
+| **WebApp** | **Redis** | TCP 6379 | None / Password | `redis:6379` | Transparent fallback to MySQL session storage (`ci_sessions`). |
+| **WebApp** | **MinIO S3** | HTTP / S3 API | AWS SigV4 Auth | `http://minio:9000` | Streams media; falls back to local storage if driver is `local`. |
+| **WebApp** | **ML Service** | HTTP/1.1 (cURL) | Header `X-API-KEY` | `http://ml:8000` | Non-blocking async (`100ms` timeout); upload succeeds if ML down. |
+| **ML Service** | **MinIO S3** | HTTP / S3 API | AWS SigV4 Auth | `http://minio:9000` | Direct S3 object fetch; falls back to `/app/uploads:ro` mount. |
+| **ML Service** | **Qdrant** | HTTP / gRPC | None / API Key | `http://qdrant:6333` | Background vector upsert; graceful degrade on search failure. |
+| **WebApp** | **Google Cloud** | HTTPS 443 | Service Account OAuth2 | `storage.googleapis.com` | Photos flagged `gcp_synced=0` and retried via `php spark cloud:sync`. |
 
 ---
 

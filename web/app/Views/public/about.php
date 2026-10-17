@@ -72,15 +72,18 @@
 │                                  ├── MySQL 8.4 (Port 3306)                             │
 │                                  │   Users, albums, EXIF, tags, person metadata        │
 │                                  │                                                     │
+│                                  ├── MinIO Object Storage (Port 9000 S3 / 9001 Console)│
+│                                  │   Primary S3 bucket (Multi-Cloud / AWS / GCP backup)│
+│                                  │                                                     │
 │                                  ├── Redis 7 (Port 6379)                               │
-│                                  │   Session cache, rate limiting & scan job queues    │
+│                                  │   Session cache (MySQL fallback) & scan job queues  │
 │                                  │                                                     │
 │                                  ├── ML Microservice (FastAPI / Port 8000)             │
 │                                  │   ├── InsightFace, CLIP, YOLOv8, OCR pipelines      │
-│                                  │   ├── Qdrant Vector Engine (Port 6333)              │
-│                                  │   └── Read-only mount of /uploads                   │
+│                                  │   └── Qdrant Vector Engine (Port 6333 / 6334)       │
 │                                  │                                                     │
-│                                  └── Google Cloud Storage (Optional Offsite Backup)    │
+│                                  └── Dozzle Visual Log Viewer (Port 8888)              │
+│                                      Two-tier observability & real-time streaming      │
 │                                                                                        │
 │  Android Client ────HTTP:80──▶ Web App Gateway (All ML features served via /api/v1)   │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -92,45 +95,53 @@
         <h2>Production Tech Stack</h2>
     </div>
     <div class="row g-3">
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card-pub h-100">
                 <h5>Web Management</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
                     PHP 8.3 & Apache 2.4<br>
                     CodeIgniter 4 + Shield Auth<br>
                     MySQL 8.4 (Relational DB)<br>
-                    Redis 7 (In-Memory Broker)<br>
-                    Bootstrap 5.3 + Multi-Theme Engine<br>
-                    Leaflet GPS Heatmaps & Chart.js<br>
+                    Bootstrap 5.3 + Themes<br>
+                    Leaflet GPS Heatmaps<br>
                     Standard Port: <strong>80</strong>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card-pub h-100">
                 <h5>AI Vision Backend</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
                     Python 3.12 / FastAPI<br>
-                    InsightFace (RetinaFace + ArcFace)<br>
-                    OpenAI CLIP (Transformer Embeddings)<br>
-                    Ultralytics YOLOv8 (Object Detection)<br>
-                    Tesseract OCR (Text Extraction)<br>
-                    Qdrant 1.13 (HNSW Vector DB)<br>
+                    InsightFace (ArcFace 512-d)<br>
+                    OpenAI CLIP (Multimodal)<br>
+                    Ultralytics YOLOv8<br>
+                    Tesseract OCR Engine<br>
                     Standard Port: <strong>8000</strong>
                 </div>
             </div>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <div class="card-pub h-100">
-                <h5>Android Companion</h5>
+                <h5>Data & Object Storage</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    Kotlin 2.0+ / Coroutines<br>
-                    Jetpack Compose UI & Material 3<br>
-                    Biometric Prompt (Fingerprint)<br>
+                    MinIO S3 (Port <strong>9000</strong>/<strong>9001</strong>)<br>
+                    Qdrant 1.13 Vector (Port <strong>6333</strong>)<br>
+                    Redis 7 Cache (Port <strong>6379</strong>)<br>
+                    Multi-Cloud AWS & GCP Sync<br>
+                    AWS SigV4 Authentication
+                </div>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card-pub h-100">
+                <h5>Android & Observability</h5>
+                <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
+                    Kotlin 2.0+ / Jetpack Compose<br>
                     WorkManager Background Sync<br>
-                    Retrofit 2.11 + OkHttp 4.12<br>
-                    Room Database (Local Cache)<br>
-                    Min SDK 29 / Target SDK 36
+                    Room DB + Biometric Auth<br>
+                    Dozzle Logs (Port <strong>8888</strong>)<br>
+                    Two-Tier Container Diagnostics
                 </div>
             </div>
         </div>

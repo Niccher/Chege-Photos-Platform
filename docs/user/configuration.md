@@ -39,7 +39,42 @@ When running on Docker or bare-metal, use the standard `database.default.*` keys
 
 ---
 
-## 4. Google Cloud Storage (Persistent Offsite Backup)
+## 4. Object Storage (MinIO / AWS S3 / GCP)
+
+| Variable | Default | Description |
+|---|---|---|
+| `STORAGE_DRIVER` | `minio` | Active driver: `minio`, `s3`, `gcp`, or `local`. |
+| `S3_ENDPOINT` | `http://minio:9000` | S3 API endpoint URL (internal or cloud). |
+| `S3_BUCKET` | `chege-photos` | Target storage bucket for photos and thumbnails. |
+| `S3_ACCESS_KEY` | `minio_admin` | S3 / MinIO access key ID. |
+| `S3_SECRET_KEY` | `minio_password123` | S3 / MinIO secret access key. |
+| `S3_USE_PATH_STYLE` | `true` | Path-style URL addressing (`true` for MinIO, `false` for AWS S3). |
+| `MINIO_PORT` | `9000` | Host published port for MinIO S3 API. |
+| `MINIO_CONSOLE_PORT` | `9001` | Host published port for MinIO Web Console. |
+| `MINIO_ROOT_USER` | `minio_admin` | Root administrative username for MinIO. |
+| `MINIO_ROOT_PASSWORD` | `minio_password123`| Root administrative password for MinIO. |
+
+---
+
+## 5. In-Memory Cache & Session (Redis 7)
+
+| Variable | Default | Description |
+|---|---|---|
+| `REDIS_HOST` | `redis` | Redis service hostname or IP address. |
+| `REDIS_PORT` | `6379` | Redis port number. |
+| `REDIS_URL` | `redis://redis:6379/0` | Full Redis connection URI (used by ML queue). |
+
+---
+
+## 6. Observability & Logging (Dozzle)
+
+| Variable | Default | Description |
+|---|---|---|
+| `DOZZLE_PORT` | `8888` | Host published port for Dozzle real-time log viewer. |
+
+---
+
+## 7. Google Cloud Storage (Persistent Offsite Backup)
 
 | Variable | Default | Description |
 |---|---|---|
@@ -51,7 +86,7 @@ When running on Docker or bare-metal, use the standard `database.default.*` keys
 
 ---
 
-## 5. Superadmin Seed Credentials
+## 8. Superadmin Seed Credentials
 
 Used on initial database provisioning by `SystemDefaultSeeder`:
 
