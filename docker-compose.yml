@@ -260,6 +260,8 @@ services:
     environment:
       DOZZLE_LEVEL: info
       DOZZLE_NO_ANALYTICS: "true"
+      DOZZLE_AUTH_PROVIDER: ${DOZZLE_AUTH_PROVIDER:-}
+      DOZZLE_USERS: ${DOZZLE_USERS:-}
     networks:
       chege-network:
         aliases:

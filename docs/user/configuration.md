@@ -71,6 +71,15 @@ When running on Docker or bare-metal, use the standard `database.default.*` keys
 | Variable | Default | Description |
 |---|---|---|
 | `DOZZLE_PORT` | `8888` | Host published port for Dozzle real-time log viewer. |
+| `DOZZLE_AUTH_PROVIDER` | *empty* | Set to `simple` to enforce password authentication on the web interface. |
+| `DOZZLE_USERS` | *empty* | Comma-separated user credentials in `username:password` format when `DOZZLE_AUTH_PROVIDER=simple`. |
+
+> [!TIP]
+> **Private SSH Tunneling**: To access Dozzle without exposing port 8888 on public networks:
+> ```bash
+> ssh -N -L 8888:localhost:8888 <username>@<server-ip>
+> ```
+> Then navigate to `http://localhost:8888` in your local browser.
 
 ---
 

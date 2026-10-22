@@ -248,6 +248,8 @@ MINIO_CONSOLE_PORT=$(get_env "MINIO_CONSOLE_PORT" "9001")
 MINIO_ROOT_USER=$(get_env "MINIO_ROOT_USER" "minio_admin")
 MINIO_ROOT_PASSWORD=$(get_env "MINIO_ROOT_PASSWORD" "minio_password123")
 DOZZLE_PORT=$(get_env "DOZZLE_PORT" "8888")
+DOZZLE_AUTH_PROVIDER=$(get_env "DOZZLE_AUTH_PROVIDER" "")
+DOZZLE_USERS=$(get_env "DOZZLE_USERS" "")
 S3_BUCKET=$(get_env "S3_BUCKET" "chege-photos")
 STORAGE_DRIVER=$(get_env "STORAGE_DRIVER" "minio")
 
@@ -272,6 +274,8 @@ set_env "MINIO_CONSOLE_PORT" "$MINIO_CONSOLE_PORT"
 set_env "MINIO_ROOT_USER" "$MINIO_ROOT_USER"
 set_env "MINIO_ROOT_PASSWORD" "$MINIO_ROOT_PASSWORD"
 set_env "DOZZLE_PORT" "$DOZZLE_PORT"
+set_env "DOZZLE_AUTH_PROVIDER" "$DOZZLE_AUTH_PROVIDER"
+set_env "DOZZLE_USERS" "$DOZZLE_USERS"
 set_env "S3_BUCKET" "$S3_BUCKET"
 set_env "STORAGE_DRIVER" "$STORAGE_DRIVER"
 set_env "S3_ENDPOINT" "http://minio:9000"
@@ -566,7 +570,11 @@ if [[ "$FINAL_WEB" =~ ^(200|301|302|307|403)$ ]]; then
     echo -e "  ${BOLD}Qdrant Web Console   :${RESET}  http://${DETECTED_IP}:${QDRANT_HTTP_PORT}/dashboard"
     echo -e "  ${BOLD}MinIO S3 API         :${RESET}  http://${DETECTED_IP}:${MINIO_PORT}"
     echo -e "  ${BOLD}MinIO Web Console    :${RESET}  http://${DETECTED_IP}:${MINIO_CONSOLE_PORT}  (User: ${YELLOW}${MINIO_ROOT_USER}${RESET} / Pass: ${YELLOW}${MINIO_ROOT_PASSWORD}${RESET})"
-    echo -e "  ${BOLD}Dozzle Visual Logs   :${RESET}  http://${DETECTED_IP}:${DOZZLE_PORT}"
+    if [ "$DOZZLE_AUTH_PROVIDER" = "simple" ] && [ -n "$DOZZLE_USERS" ]; then
+        echo -e "  ${BOLD}Dozzle Visual Logs   :${RESET}  http://${DETECTED_IP}:${DOZZLE_PORT}  (Auth: ${GREEN}Enabled${RESET})"
+    else
+        echo -e "  ${BOLD}Dozzle Visual Logs   :${RESET}  http://${DETECTED_IP}:${DOZZLE_PORT}  (Auth: ${YELLOW}Unauthenticated / SSH Tunnel Recommended${RESET})"
+    fi
     echo -e "  ${BOLD}Host CLI Diagnostic  :${RESET}  bash scripts/logs.sh  (--errors | --dump | <service>)"
     echo -e "  ${BOLD}Redis Cache Server   :${RESET}  localhost:${REDIS_PORT}"
     echo -e "  ${BOLD}MySQL 8.4 Relational :${RESET}  localhost:${DB_PORT}"
