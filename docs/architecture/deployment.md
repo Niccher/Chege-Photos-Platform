@@ -31,7 +31,7 @@ For private VPS deployment (Ubuntu 22.04 / 24.04, Debian 12) or local orchestrat
 - **MinIO Object Storage**: S3-compatible primary photo/thumbnail bucket (Port `9000` S3 API / `9001` Web Console via `cgr.dev/chainguard/minio`).
 - **MinIO Initialization**: Automatic bucket creation (`chege-photos`) and thumbnail download policy via `cgr.dev/chainguard/minio-client`.
 - **Dozzle Visual Log Viewer**: Lightweight real-time container log console (Port `8888`).
-- **WebApp Gateway**: CodeIgniter 4 PHP 8.3 & Apache API/UI (Port `80`).
+- **WebApp Gateway**: CodeIgniter 4 PHP 8.4 & Apache API/UI (Port `80`).
 - **ML Microservice**: FastAPI Vision & embedding microservice (Port `8000`).
 
 One-click automated deployment:

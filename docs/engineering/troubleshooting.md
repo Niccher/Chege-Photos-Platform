@@ -9,13 +9,13 @@ Diagnostic procedures for common compiler, runtime extension, and framework issu
 When running bare-metal without Docker, CodeIgniter 4 may fail on missing modules:
 
 ```bash
-# Ubuntu / Debian install command for required PHP 8.3 extensions:
-sudo apt install php8.3-intl php8.3-mysqli php8.3-gd php8.3-zip \
-  php8.3-exif php8.3-curl php8.3-mbstring php8.3-xml
+# Ubuntu / Debian install command for required PHP 8.4 extensions:
+sudo apt install php8.4-intl php8.4-mysqli php8.4-gd php8.4-zip \
+  php8.4-exif php8.4-curl php8.4-mbstring php8.4-xml
 ```
 
 * **Symptoms**: `Call to undefined function intl_is_failure()` or blank pages during boot.
-* **Fix**: Ensure all extensions above are enabled in `/etc/php/8.3/apache2/php.ini` and `/etc/php/8.3/cli/php.ini`.
+* **Fix**: Ensure all extensions above are enabled in `/etc/php/8.4/apache2/php.ini` and `/etc/php/8.4/cli/php.ini`.
 
 ---
 

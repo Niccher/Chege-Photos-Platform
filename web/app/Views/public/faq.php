@@ -30,7 +30,7 @@
             </h2>
             <div id="faq1" class="accordion-collapse collapse show" data-bs-parent="#faqAccordion">
                 <div class="accordion-body">
-                    Chege Photos is a <strong>self-hosted, open-source</strong> photo management platform engineered for complete data privacy and local multimodal AI intelligence. It consists of the <strong>Chege-Photos-Platform monorepo</strong> (PHP 8.3 / CodeIgniter 4 web application + MySQL 8.4 + Python 3.12 / FastAPI vision service + Qdrant vector database + Redis 7) and the native <strong>Chege Photos Android companion app</strong> (Kotlin + Jetpack Compose). All neural models (CLIP semantic search, InsightFace clustering, YOLOv8 object tagging, Tesseract OCR) execute entirely on your own hardware — zero cloud subscriptions, zero telemetry, and zero third-party API dependencies.
+                    Chege Photos is a <strong>self-hosted, open-source</strong> photo management platform engineered for complete data privacy and local multimodal AI intelligence. It consists of the <strong>Chege-Photos-Platform monorepo</strong> (PHP 8.4 / CodeIgniter 4 web application + MySQL 8.4 + Python 3.12 / FastAPI vision service + Qdrant vector database + Redis 7) and the native <strong>Chege Photos Android companion app</strong> (Kotlin + Jetpack Compose). All neural models (CLIP semantic search, InsightFace clustering, YOLOv8 object tagging, Tesseract OCR) execute entirely on your own hardware — zero cloud subscriptions, zero telemetry, and zero third-party API dependencies.
                 </div>
             </div>
         </div>

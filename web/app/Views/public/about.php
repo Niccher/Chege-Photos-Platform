@@ -26,7 +26,7 @@
         <div class="col-lg-6">
             <div class="card-pub h-100">
                 <h5>Core Web Application & Portal</h5>
-                <p>Engineered on PHP 8.3 / CodeIgniter 4 with Shield authentication, the web portal provides:</p>
+                <p>Engineered on PHP 8.4 / CodeIgniter 4 with Shield authentication, the web portal provides:</p>
                 <ul style="color: var(--text-muted); font-size: 0.9rem; line-height: 2;">
                     <li><strong>Upload & Processing</strong> — Chunked AJAX multi-file upload, 512 MB file limit, and EXIF extraction.</li>
                     <li><strong>Natural Language Search</strong> — Instant plain-text queries via local CLIP vector embeddings.</li>
@@ -67,7 +67,7 @@
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                        Chege Photos Platform (Docker Network)                          │
 │                                                                                        │
-│  Browser / Client ──HTTP:80──▶ Web Application (PHP 8.3 Apache / CodeIgniter 4)        │
+│  Browser / Client ──HTTP:80──▶ Web Application (PHP 8.4 Apache / CodeIgniter 4)        │
 │                                  │                                                     │
 │                                  ├── MySQL 8.4 (Port 3306)                             │
 │                                  │   Users, albums, EXIF, tags, person metadata        │
@@ -99,7 +99,7 @@
             <div class="card-pub h-100">
                 <h5>Web Management</h5>
                 <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    PHP 8.3 & Apache 2.4<br>
+                    PHP 8.4 & Apache 2.4<br>
                     CodeIgniter 4 + Shield Auth<br>
                     MySQL 8.4 (Relational DB)<br>
                     Bootstrap 5.3 + Themes<br>

@@ -380,7 +380,7 @@
             <div class="col-md-3">
                 <h6 style="color: var(--text-primary); font-size: 0.8rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em;">Tech Stack</h6>
                 <div class="d-flex flex-wrap gap-1">
-                    <span class="tech-badge">PHP 8.3</span>
+                    <span class="tech-badge">PHP 8.4</span>
                     <span class="tech-badge">CI4</span>
                     <span class="tech-badge">MySQL 8.4</span>
                     <span class="tech-badge">Python 3.12</span>

@@ -3,7 +3,7 @@
 ## 1. Ground Truth Architecture
 * **Repository Role**: Unified backend platform monorepo containing WebApp, ML microservice, and Docker orchestration.
 * **Component Directory Layout**:
-  - `web/`: CodeIgniter 4 PHP 8.3 Web UI, Admin portal, and Mobile REST API gateway. Exposes standard HTTP port `80` (Apache).
+  - `web/`: CodeIgniter 4 PHP 8.4 Web UI, Admin portal, and Mobile REST API gateway. Exposes standard HTTP port `80` (Apache).
   - `ml/`: FastAPI computer vision and semantic embedding microservice. Exposes standard port `8000`.
   - `docs/`: Unified platform architecture, handbooks, and runbooks.
 * **Standard Ports**:

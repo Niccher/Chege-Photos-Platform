@@ -320,7 +320,7 @@ else
     log "Pulling base images (MySQL 8.4, Redis 7, Qdrant, MinIO, Dozzle)..."
     docker compose pull mysql redis qdrant minio minio-init dozzle 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
 
-    log "Building Web application container (PHP 8.3 + Apache)..."
+    log "Building Web application container (PHP 8.4.27 + Apache)..."
     docker compose --progress=plain build web
 
     log "Building ML microservice container (FastAPI + Vision models)..."

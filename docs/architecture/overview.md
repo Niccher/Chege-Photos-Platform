@@ -12,7 +12,7 @@ C4Context
   Person(user, "User / Photographer", "Uploads, organizes, browses memories, and shares albums.")
   Person(admin, "Superadmin", "Monitors telemetry, manages storage quotas, configures cron tasks.")
 
-  System(webapp, "Chege Photos WebApp", "PHP 8.3 / CodeIgniter 4. Core web UI, admin console, authentication, and mobile sync gateway.")
+  System(webapp, "Chege Photos WebApp", "PHP 8.4 / CodeIgniter 4. Core web UI, admin console, authentication, and mobile sync gateway.")
   System(ml, "ML Chege Photos", "FastAPI / Python 3.12. Neural network face detection, ArcFace embeddings, YOLO tags, CLIP vision.")
   SystemDb(qdrant, "Qdrant Vector DB", "HNSW high-dimensional vector similarity index.")
   SystemDb(mysql, "MySQL 8.4 Database", "Relational metadata catalog, EXIF storage, and user credentials.")
@@ -39,7 +39,7 @@ C4Context
 
 | Container / Service | Technology | Port (Internal) | Standard Production Port | Responsibility |
 |---|---|---|---|---|
-| `chege-photos-web` | PHP 8.3 / Apache | `80` | `80` | Web controllers, views, REST API, fallback hydration, cron runner |
+| `chege-photos-web` | PHP 8.4 / Apache | `80` | `80` | Web controllers, views, REST API, fallback hydration, cron runner |
 | `chege-photos-ml` | FastAPI / PyTorch | `8000` | `8000` | Face detection (ArcFace), CLIP semantic search, YOLOv8 tagging |
 | `chege-minio` | MinIO Object Storage | `9000` / `9001` | `9000` / `9001` | Primary S3-compatible photo/thumbnail storage + Web Console |
 | `chege-redis` | Redis 7 Alpine | `6379` | `6379` | In-memory session store with MySQL fallback, queue broker |

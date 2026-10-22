@@ -2,7 +2,7 @@
 
 Unified backend platform for self-hosted personal photo and video management featuring automated face clustering (InsightFace ArcFace), object tagging (YOLOv8), semantic text-to-image search (CLIP), Redis caching and durable queueing, Qdrant vector indexing, Google Cloud Storage hydration, and companion Android synchronization.
 
-**Stack**: PHP 8.3 / CodeIgniter 4, Python 3.12 / FastAPI, Redis 7, Qdrant Vector DB, MySQL 8.4, Docker Compose.  
+**Stack**: PHP 8.4 / CodeIgniter 4, Python 3.12 / FastAPI, Redis 7, Qdrant Vector DB, MySQL 8.4, Docker Compose.  
 **If you only need to run the system, this page is enough.** Software engineers: [docs/README.md](docs/README.md).
 
 ---

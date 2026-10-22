@@ -11,7 +11,7 @@ Chege Photos WebApp utilizes GitHub Actions for continuous integration:
 | Workflow | File Path | Trigger | Responsibilities |
 |---|---|---|---|
 | **Docs Quality Verification** | `.github/workflows/docs-verify.yml` | Push & PR to `main`/`master` touching `README.md` or `docs/**` | Runs `scripts/lint-docs.py` (checks line counts, leaked instructions, broken markdown links) and verifies external links via `markdown-link-check`. |
-| **PHPUnit & Lint Suite** | `.github/workflows/php.yml` | Push & PR to `main`/`master` | Executes PHP linting, static analysis, and PHPUnit unit tests across PHP 8.3 environments. |
+| **PHPUnit & Lint Suite** | `.github/workflows/php.yml` | Push & PR to `main`/`master` | Executes PHP linting, static analysis, and PHPUnit unit tests across PHP 8.4 environments. |
 
 ---
 

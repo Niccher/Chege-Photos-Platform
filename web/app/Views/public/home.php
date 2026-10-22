@@ -25,7 +25,7 @@
         </a>
     </div>
     <div class="mt-4 d-flex gap-2 flex-wrap justify-content-center" style="font-size: 0.8rem; color: var(--text-muted);">
-        <span class="tech-badge"><i class="bi bi-filetype-php me-1"></i>PHP 8.3 / CI4</span>
+        <span class="tech-badge"><i class="bi bi-filetype-php me-1"></i>PHP 8.4 / CI4</span>
         <span class="tech-badge"><i class="bi bi-database me-1"></i>MySQL 8.4</span>
         <span class="tech-badge"><i class="bi bi-lightning-charge me-1"></i>Python 3.12 / FastAPI</span>
         <span class="tech-badge"><i class="bi bi-person-bounding-box me-1"></i>InsightFace (ArcFace)</span>

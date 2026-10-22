@@ -6,7 +6,7 @@ Step-by-step instructions for operators and QA to start, verify, and shut down t
 
 ## 1. Quick Start via Docker Compose (Recommended)
 
-The easiest and most reliable way to run the WebApp is via Docker Compose, which packages PHP 8.3 Apache, MySQL 8.4, and phpMyAdmin.
+The easiest and most reliable way to run the WebApp is via Docker Compose, which packages PHP 8.4 Apache, MySQL 8.4, and companion microservices.
 
 ### Step 1: Clone Repository
 ```bash

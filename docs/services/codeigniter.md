@@ -31,7 +31,7 @@ app/
 
 ## 2. Available Spark CLI Commands
 
-Run these inside the container or on a local PHP 8.3 installation:
+Run these inside the container or on a local PHP 8.4 installation:
 
 ```bash
 # Execute master task scheduler
