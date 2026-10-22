@@ -1,34 +1,54 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+All notable changes to the Chege Photos Platform will be documented in this file.
 
-## [1.2.0] - 2026-10-06
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-### Removed
-- **Vendored Binary Python Wheels**: Completely purged 62 pre-compiled `.whl` package archives (~223 MB) from `ml/wheels/` and removed them from Git tracking index. This permanently eliminates GitHub's `>50 MB` push warnings (specifically for `opencv_python-5.0.0.93` at 70.36 MB) and dramatically reduces clone/push bandwidth.
+---
+
+## [1.3.0] - 2026-10-22
+
+### Security & Hardening
+- **PHP 8.4.27 Upgrade**: Upgraded `web/Dockerfile` base image to `php:8.4.27-apache-bookworm` to completely remediate critical unauthenticated RCE vulnerabilities (`php2shell`):
+  - **CVE-2026-109618** (CVSS 9.2): Memory corruption via uninitialized request state during out-of-memory (`memory_limit`) aborts via `longjmp()`.
+  - **CVE-2026-109619** (CVSS 9.2): Stale global state pointers referencing freed request memory leading to use-after-free RCE.
+- **Dozzle Access Protection**: Added optional native password authentication (`DOZZLE_AUTH_PROVIDER=simple`, `DOZZLE_USERS`) and documented zero-exposure private SSH tunneling (`ssh -N -L 8888:localhost:8888`).
+- **Chainguard Distroless Hardening**: Switched MinIO client to `cgr.dev/chainguard/minio-client:latest-dev` with root execution privileges for deterministic bucket initialization.
+
+### Added
+- **Multi-Cloud Object Storage (MinIO S3)**: Integrated MinIO on standard ports `9000` (S3 API) and `9001` (Web Console) with AWS SigV4 signing, decoupling photo and thumbnail storage from local server disks.
+- **Two-Tier Observability**:
+  - *Tier 1 (Core Diagnostics)*: Direct container stderr streaming in PHP (`ErrorlogHandler`), Starlette request latency middleware in ML microservice, background cron log forwarding, and Docker log rotation (max 20MB / 5 files).
+  - *Tier 2 (Visual Logs)*: Deployed Dozzle Go binary container (`chege-dozzle`) on port `8888` for split-screen real-time container log inspection.
+- **Host Diagnostic Utility (`scripts/logs.sh`)**: CLI utility supporting real-time multi-tailing, error scanning (`--errors`), and diagnostic bundle archiving (`--dump`).
+- **Single Source of Truth Versioning**: Root `VERSION` file with synchronized release metadata across WebApp (`PLATFORM_VERSION`), API (`/api/v1/health`), and Android client.
 
 ### Changed
-- **ML Dockerfile BuildKit Optimization**: Refactored `ml/Dockerfile` pip dependency installation to utilize BuildKit cache mounts (`--mount=type=cache,target=/root/.cache/pip`), significantly accelerating local and CI container rebuilds without inflating final image size.
-- **Docker & Git Ignore Boundary Hardening**:
-  - Added ignore patterns for `ml/wheels/`, `wheels/`, and `*.whl` to root `.gitignore` and `ml/.gitignore`.
-  - Excluded `wheels/`, `*.whl`, `models/`, and `*.onnx` from `ml/.dockerignore` to prevent developer host weights and wheels from inflating Docker daemon context transfers (< 5 MB).
-- **Public Landing Page Copy**: Updated `web/app/Views/public/home.php` to accurately describe automated model provisioning and Docker layer caching rather than deprecated offline vendored wheels.
+- Refactored `scripts/deploy.sh` to automatically manage `DOZZLE_PORT`, `MINIO_PORT`, and auth parameters.
+- Overhauled public landing pages (`home.php`, `about.php`, `setup.php`, `layouts/public.php`) to document the 5-stage media pipeline and all 7 supporting containers.
 
-### Fixed
-- **FastAPI Documentation Relative Link**: Resolved broken relative path link in `docs/services/fastapi.md` targeting `app/main.py` by pointing to the correct monorepo path `../../ml/app/main.py`.
+---
 
-### Documentation
-- **ML Microservice Local Development Handbook**: Expanded `docs/engineering/local-development.md` with step-by-step instructions for native Python 3.12 virtual environment (`venv`) setup, pip package installation, model downloading, and Uvicorn server execution.
-- **ML Service Model Provisioning Docs**: Documented automated build-time model weight acquisition and runtime fallback mechanisms (`scripts/download_all_models.py` and `app/ml/loader.py`) in `docs/services/ml.md`.
-- **Release Compatibility Matrix**: Updated `docs/engineering/release.md` to define version `v1.2.x` requirements, compatibility constraints, and architectural changes across the ecosystem.
+## [1.2.0] - 2026-09-15
 
-## [1.1.0] - 2026-08-27
+### Added
+- **Multimodal AI Vision Suite (FastAPI / PyTorch)**:
+  - InsightFace RetinaFace face detection and ArcFace 512-dimensional vector embeddings.
+  - Unsupervised HDBSCAN clustering for automatic grouping of faces into named person identities.
+  - OpenAI CLIP cross-modal text-to-image search indexed in Qdrant HNSW vector database.
+  - Ultralytics YOLOv8 object and scene classification across 80+ visual categories.
+  - Tesseract OCR for text recognition within screenshots, receipts, and signs.
+- **Frictionless Mobile Pairing**: Fast Android companion client pairing via QR code scanning or 6-digit numeric PIN.
+- **Redis Asynchronous Queue**: Decoupled deep learning inference pipeline from web requests using Redis job queues.
 
-### Changed
-- **Dockerization Optimizations**: Refactored `Dockerfile` to implement efficient multi-stage builds.
-  - Leveraged BuildKit cache mounts (`--mount=type=cache`) for `apt` package manager and `composer` downloads.
-  - Added dependency layering to separate Composer installation (`composer.json`, `composer.lock`) from application code changes, improving build speed.
-  - Configured system package installation with `--no-install-recommends` to keep the image slim.
-  - Cleaned up Composer binary after dependency installation to reduce attack surface and final image size.
-  - Moved Apache configuration updates into organized blocks and automated PHP runtime limits configuration.
-- **Docker Ignore Updates**: Updated `.dockerignore` to exclude `.gitignore` and `vendor/` directory while ensuring `composer.lock` is included to lock dependencies during Docker build stages.
+---
+
+## [1.1.0] - 2026-08-01
+
+### Added
+- **Core Web Application**: Built on CodeIgniter 4 with Shield authentication, chunked file uploads up to 512MB, and EXIF extraction.
+- **Relational Storage**: MySQL 8.4 schema for photos, albums, EXIF metadata, and user quotas.
+- **Interactive Spatial Heatmaps**: Leaflet GPS heatmaps based on embedded photo coordinates.
+- **Memories Engine**: Automated "On This Day" and seasonal flash-back timeline generation.
+- **Cloud Hydration**: Google Cloud Storage backup worker for offsite disaster recovery.

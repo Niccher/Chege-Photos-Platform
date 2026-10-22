@@ -16,6 +16,14 @@
 defined('APP_NAMESPACE') || define('APP_NAMESPACE', 'App');
 
 /*
+ | --------------------------------------------------------------------
+ | Platform Release Version (Single Source of Truth)
+ | --------------------------------------------------------------------
+ | Read dynamically from the root VERSION file.
+ */
+defined('PLATFORM_VERSION') || define('PLATFORM_VERSION', trim((string)@file_get_contents(ROOTPATH . '../VERSION') ?: '1.3.0'));
+
+/*
  | --------------------------------------------------------------------------
  | Composer Path
  | --------------------------------------------------------------------------

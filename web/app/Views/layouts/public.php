@@ -316,6 +316,7 @@
     <a href="<?= base_url() ?>" class="pub-brand">
         <img src="<?= base_url('app_icon.png') ?>" alt="Logo" width="28" height="28" class="rounded shadow-sm">
         <span>Chege Photos</span>
+        <span class="badge rounded-pill bg-primary-subtle text-primary border border-primary-subtle ms-1" style="font-size: 0.65rem; font-weight: 600; letter-spacing: 0.03em;">v<?= defined('PLATFORM_VERSION') ? PLATFORM_VERSION : '1.3.0' ?></span>
     </a>
     <div class="nav-links d-none d-md-flex">
         <a href="<?= base_url() ?>" class="<?= $this->renderSection('nav-home') ?>" aria-label="Home">Home</a>
@@ -394,9 +395,9 @@
         </div>
         <hr style="border-color: var(--border-color); margin: 2rem 0 1rem;">
         <div class="d-flex flex-wrap justify-content-between align-items-center gap-2">
-            <span style="color: var(--text-muted); font-size: 0.82rem;">&copy; <?= date('Y') ?> Chege Photos. Released under the MIT License.</span>
+            <span style="color: var(--text-muted); font-size: 0.82rem;">&copy; <?= date('Y') ?> Chege Photos Platform v<?= defined('PLATFORM_VERSION') ? PLATFORM_VERSION : '1.3.0' ?>. Released under the MIT License.</span>
             <span style="color: var(--text-muted); font-size: 0.82rem;">
-                <i class="bi bi-github me-1"></i>Open Source
+                <i class="bi bi-github me-1"></i>Open Source Monorepo
             </span>
         </div>
     </div>

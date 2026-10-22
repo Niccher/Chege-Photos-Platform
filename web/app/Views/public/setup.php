@@ -164,15 +164,15 @@ docker compose ps</pre>
         <div class="col-md-6">
             <div class="card-pub h-100">
                 <h5>Health Check & Diagnostics</h5>
-                <pre class="code-block"># Verify Web service health:
-curl -s http://localhost/api/v1/health
+                <pre class="code-block"># Verify Web service health (reports platform_version & php_version):
+curl -s http://localhost/api/v1/health | jq
 
 # Verify ML microservice & models:
-curl -s http://localhost:8000/health
+curl -s http://localhost:8000/health | jq
 
-# Scan across all 7 containers for errors:
+# Scan across all 7 cluster containers for errors:
 bash scripts/logs.sh --errors</pre>
-                <p style="font-size:0.85rem; color:var(--text-muted);" class="mt-2 mb-0">Both endpoints return <code>"status": "healthy"</code> or HTTP 200.</p>
+                <p style="font-size:0.85rem; color:var(--text-muted);" class="mt-2 mb-0">The web health check confirms platform release <code>v<?= defined('PLATFORM_VERSION') ? PLATFORM_VERSION : '1.3.0' ?></code> on PHP 8.4, and the ML check confirms model weights are loaded.</p>
             </div>
         </div>
         <div class="col-md-6">

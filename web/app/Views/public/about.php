@@ -92,94 +92,121 @@
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Production Tech Stack</h2>
+        <h2>Production Container Cluster (7 Services)</h2>
+        <p>Every component runs containerized on an isolated Docker network with health checks, strict resource limits, and automated volume management.</p>
     </div>
-    <div class="row g-3">
-        <div class="col-md-3">
-            <div class="card-pub h-100">
-                <h5>Web Management</h5>
-                <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    PHP 8.4 & Apache 2.4<br>
-                    CodeIgniter 4 + Shield Auth<br>
-                    MySQL 8.4 (Relational DB)<br>
-                    Bootstrap 5.3 + Themes<br>
-                    Leaflet GPS Heatmaps<br>
-                    Standard Port: <strong>80</strong>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-pub h-100">
-                <h5>AI Vision Backend</h5>
-                <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    Python 3.12 / FastAPI<br>
-                    InsightFace (ArcFace 512-d)<br>
-                    OpenAI CLIP (Multimodal)<br>
-                    Ultralytics YOLOv8<br>
-                    Tesseract OCR Engine<br>
-                    Standard Port: <strong>8000</strong>
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-pub h-100">
-                <h5>Data & Object Storage</h5>
-                <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    MinIO S3 (Port <strong>9000</strong>/<strong>9001</strong>)<br>
-                    Qdrant 1.13 Vector (Port <strong>6333</strong>)<br>
-                    Redis 7 Cache (Port <strong>6379</strong>)<br>
-                    Multi-Cloud AWS & GCP Sync<br>
-                    AWS SigV4 Authentication
-                </div>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-pub h-100">
-                <h5>Android & Observability</h5>
-                <div style="color: var(--text-muted); font-size: 0.88rem; line-height: 2;">
-                    Kotlin 2.0+ / Jetpack Compose<br>
-                    WorkManager Background Sync<br>
-                    Room DB + Biometric Auth<br>
-                    Dozzle Logs (Port <strong>8888</strong>)<br>
-                    Two-Tier Container Diagnostics
-                </div>
-            </div>
-        </div>
+    <div class="table-responsive">
+        <table class="table table-pub align-middle">
+            <thead>
+                <tr>
+                    <th>Container Service</th>
+                    <th>Runtime / Base</th>
+                    <th>Standard Port</th>
+                    <th>Internal Network Alias</th>
+                    <th>Role & Responsibility</th>
+                </tr>
+            </thead>
+            <tbody>
+                <tr>
+                    <td><strong>chege-photos-web</strong></td>
+                    <td><code>php:8.4.27-apache-bookworm</code></td>
+                    <td><code>80</code></td>
+                    <td><code>web</code></td>
+                    <td>CodeIgniter 4 WebApp, Shield authentication, REST API gateway, EXIF extraction, and cron task scheduler.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-photos-ml</strong></td>
+                    <td><code>python:3.12-slim</code></td>
+                    <td><code>8000</code></td>
+                    <td><code>ml</code>, <code>ml-chege-photos</code></td>
+                    <td>FastAPI neural engine running RetinaFace, ArcFace, HDBSCAN, OpenAI CLIP, YOLOv8, and Tesseract OCR.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-mysql</strong></td>
+                    <td><code>mysql:8.4</code></td>
+                    <td><code>3306</code></td>
+                    <td><code>mysql</code></td>
+                    <td>ACID relational database for users, albums, photos, tags, EXIF parameters, and operational audit logs.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-minio</strong></td>
+                    <td><code>cgr.dev/chainguard/minio</code></td>
+                    <td><code>9000</code> / <code>9001</code></td>
+                    <td><code>minio</code></td>
+                    <td>S3-compatible distributed object storage decoupling binary photo assets from application host containers.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-minio-init</strong></td>
+                    <td><code>minio-client:latest-dev</code></td>
+                    <td>—</td>
+                    <td><code>minio-init</code></td>
+                    <td>Bootstrap init container that provisions the <code>chege-photos</code> bucket and public thumbnail policy on boot.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-redis</strong></td>
+                    <td><code>redis:7-alpine</code></td>
+                    <td><code>6379</code></td>
+                    <td><code>redis</code></td>
+                    <td>In-memory session cache (with automated MySQL fallback) and durable asynchronous background scan queue.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-qdrant</strong></td>
+                    <td><code>qdrant/qdrant:v1.13.2</code></td>
+                    <td><code>6333</code> / <code>6334</code></td>
+                    <td><code>qdrant</code></td>
+                    <td>HNSW high-dimensional vector search engine indexing 512-d ArcFace and CLIP embeddings with sub-15ms latency.</td>
+                </tr>
+                <tr>
+                    <td><strong>chege-dozzle</strong></td>
+                    <td><code>amir20/dozzle:latest</code></td>
+                    <td><code>8888</code></td>
+                    <td><code>dozzle</code></td>
+                    <td>Real-time visual container log streamer with read-only Docker socket mount and optional password authentication.</td>
+                </tr>
+            </tbody>
+        </table>
     </div>
 </section>
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Multimodal Ingestion Pipeline</h2>
-        <p>How an uploaded photo is securely cataloged and enriched with artificial intelligence.</p>
+        <h2>Multimodal Ingestion Pipeline (The 5 Stages)</h2>
+        <p>How an uploaded photo is securely cataloged, stored in S3, and enriched with artificial intelligence.</p>
     </div>
     <div class="row g-4">
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">1</div>
                 <h6 style="font-size:0.85rem;">Upload & EXIF</h6>
-                <p style="font-size:0.82rem;">Image received via Web or Android. EXIF tags (camera, GPS, timestamp) are extracted and saved to MySQL.</p>
+                <p style="font-size:0.82rem;">Image received via WebApp or Android background sync. GPS coordinates, camera model, and capture date are extracted into memory.</p>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">2</div>
-                <h6 style="font-size:0.85rem;">Vision Extraction</h6>
-                <p style="font-size:0.82rem;">FastAPI processes the image: InsightFace detects faces, YOLOv8 tags objects, and Tesseract extracts text.</p>
+                <h6 style="font-size:0.85rem;">MinIO S3 Persistence</h6>
+                <p style="font-size:0.82rem;">Media is committed to MinIO S3 Object Storage via AWS SigV4, keeping containers stateless and enabling offsite disaster recovery.</p>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-4">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">3</div>
-                <h6 style="font-size:0.85rem;">Vector Embeddings</h6>
-                <p style="font-size:0.82rem;">ArcFace generates 512-d face vectors and CLIP encodes the image. Embeddings are indexed into Qdrant collections.</p>
+                <h6 style="font-size:0.85rem;">Relational Indexing</h6>
+                <p style="font-size:0.82rem;">Metadata, SHA-256 deduplication hash, and album assignments are committed to MySQL 8.4; scan job is enqueued in Redis.</p>
             </div>
         </div>
-        <div class="col-md-3">
+        <div class="col-md-6">
             <div class="card-pub text-center h-100">
                 <div class="step-num mx-auto mb-2">4</div>
-                <h6 style="font-size:0.85rem;">Clustering & Search</h6>
-                <p style="font-size:0.82rem;">HDBSCAN groups faces into named persons. Library becomes instantly searchable by concept, person, or keyword.</p>
+                <h6 style="font-size:0.85rem;">Asynchronous Vision Extraction</h6>
+                <p style="font-size:0.82rem;">FastAPI ML microservice pops the job from Redis: InsightFace detects faces, YOLOv8 tags 80+ scenes, and Tesseract OCR extracts text.</p>
+            </div>
+        </div>
+        <div class="col-md-6">
+            <div class="card-pub text-center h-100">
+                <div class="step-num mx-auto mb-2">5</div>
+                <h6 style="font-size:0.85rem;">Qdrant Vector Indexing</h6>
+                <p style="font-size:0.82rem;">ArcFace 512-d unit vectors and CLIP cross-modal embeddings are indexed into Qdrant for sub-15ms natural language search.</p>
             </div>
         </div>
     </div>

@@ -11,9 +11,11 @@ use CodeIgniter\Router\RouteCollection;
 $routes->get('test-ping', 'TestAuth::ping', ['filter' => null]);
 $routes->get('api/v1/health', function() {
     return response()->setJSON([
-        'status'  => 'ok',
-        'service' => 'web',
-        'version' => 'v1',
+        'status'           => 'ok',
+        'service'          => 'web',
+        'api_version'      => 'v1',
+        'platform_version' => defined('PLATFORM_VERSION') ? PLATFORM_VERSION : '1.3.0',
+        'php_version'      => PHP_VERSION,
     ]);
 });
 $routes->get('api/v1/test', function() { return 'API is working'; });
