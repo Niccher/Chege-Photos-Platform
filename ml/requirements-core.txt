@@ -6,4 +6,4 @@ cryptography==44.0.0
 qdrant-client==1.13.2
 pydantic-settings==2.7.1
 python-multipart==0.0.20
-Pillow==12.3.0
+Pillow==13.0.0
