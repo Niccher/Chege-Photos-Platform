@@ -129,24 +129,31 @@ class JobQueue:
             try:
                 # 1. Check Redis first if available
                 if self.use_redis and self.redis_client:
-                    item = await self.redis_client.blpop([QUEUE_KEY], timeout=2)
-                    if item:
-                        _, payload_raw = item
-                        data = json.loads(payload_raw)
-                        func_name = data.get("func")
-                        args = tuple(data.get("args", []))
-                        kwargs = data.get("kwargs", {})
-                        func = self._func_registry.get(func_name)
-                        if not func:
-                            try:
-                                from app.api.faces import process_photo_pipeline_queued
-                                if func_name == "process_photo_pipeline_queued":
-                                    func = process_photo_pipeline_queued
-                            except ImportError:
-                                pass
-                        if not func:
-                            raise ValueError(f"Unknown job function '{func_name}'")
-                        from_redis = True
+                    try:
+                        item = await self.redis_client.blpop([QUEUE_KEY], timeout=2)
+                        if item:
+                            _, payload_raw = item
+                            data = json.loads(payload_raw)
+                            func_name = data.get("func")
+                            args = tuple(data.get("args", []))
+                            kwargs = data.get("kwargs", {})
+                            func = self._func_registry.get(func_name)
+                            if not func:
+                                try:
+                                    from app.api.faces import process_photo_pipeline_queued
+                                    if func_name == "process_photo_pipeline_queued":
+                                        func = process_photo_pipeline_queued
+                                except ImportError:
+                                    pass
+                            if not func:
+                                raise ValueError(f"Unknown job function '{func_name}'")
+                            from_redis = True
+                    except (asyncio.CancelledError, KeyboardInterrupt):
+                        raise
+                    except Exception as redis_err:
+                        log.warning("[Worker %d] Redis error during dequeue: %s. Backing off 2s...", worker_id, redis_err)
+                        await asyncio.sleep(2)
+                        await self._init_redis()
 
                 # 2. If no Redis item, check in-memory queue
                 if func is None:

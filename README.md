@@ -1,146 +1,104 @@
 # Chege Photos Platform
 
-Unified backend platform for self-hosted personal photo and video management featuring automated face clustering (InsightFace ArcFace), object tagging (YOLOv8), semantic text-to-image search (CLIP), Redis caching and durable queueing, Qdrant vector indexing, Google Cloud Storage hydration, and companion Android synchronization.
+**Chege Photos Platform** is a self-hosted, privacy-first photo and video management backend with local multimodal AI intelligence — zero cloud subscriptions and zero third-party AI APIs.
 
-**Stack**: PHP 8.4 / CodeIgniter 4, Python 3.12 / FastAPI, Redis 7, Qdrant Vector DB, MySQL 8.4, Docker Compose.  
-**If you only need to run the system, this page is enough.** Software engineers: [docs/README.md](docs/README.md).
+**Stack:** Caddy 2 (`https://chegephotos.local`) + PHP 8.4.28 FPM (CodeIgniter 4) · Python 3.12 FastAPI (SigLIP, Florence-2, Whisper Large-v3-Turbo, InsightFace, YOLOv8n, OpenNSFW) · MySQL 8.4 · Redis 7 · Qdrant · MinIO S3.
 
----
-
-## What “Running” Looks Like (Standard Production Ports)
-
-| Service | URL / Endpoint | Standard Port | Purpose / Default Credential |
-|---|---|---|---|
-| **Web Application** | [http://localhost](http://localhost) | `80` | Web UI & Admin console (`admin@example.com` / `admin_password`) |
-| **ML Microservice** | [http://localhost:8000/docs](http://localhost:8000/docs) | `8000` | FastAPI vision API, Swagger `/docs` |
-| **MinIO S3 Object Storage** | [http://localhost:9001](http://localhost:9001) | `9000` / `9001` | S3 API (9000), Web Console (9001) (`minio_admin` / `minio_password123`) |
-| **Dozzle Visual Logs** | [http://localhost:8888](http://localhost:8888) | `8888` | Real-time container log console (split-screen, regex search) |
-| **Redis Cache & Queue** | `localhost:6379` | `6379` | In-memory cache & durable background job broker |
-| **Qdrant Vector DB**| [http://localhost:6333/dashboard](http://localhost:6333/dashboard) | `6333` / `6334` | Vector search engine (HTTP: 6333, gRPC: 6334) |
-| **MySQL 8.4** | `localhost:3306` | `3306` | Relational database (`db_chege_photos` / `root_password`) |
-| **Web Health Check**| `GET http://localhost/api/v1/health` | `80` | WebApp JSON status check |
-| **ML Health Check** | `GET http://localhost:8000/health` | `8000` | ML service JSON status check |
-| **Android Client**  | Companion APK | — | Connects to WebApp at `http://10.0.2.2` (emulator) or host LAN IP |
+> **If you only need to deploy and run the platform, this page is enough.**  
+> Software engineers & contributors: see [docs/README.md](docs/README.md) and [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ---
 
-## Prerequisites
+## System Overview
 
-### Docker Compose (Recommended)
-* Docker Engine 24.0+ & Docker Compose v2 (or Docker Desktop)
-* Git
-* 4 GB available RAM (for combined PHP runtime, Redis, and ML PyTorch/ONNX models)
+```mermaid
+flowchart TB
+    Clients["Web Dashboard & Android Companion App\n(https://chegephotos.local or HTTP :80)"]
+    Caddy["chege-photos-caddy (:80 / :443)\nCaddy 2 Reverse Proxy + Local TLS"]
+    Web["chege-photos-web (:9000)\nPHP 8.4.28 FPM + OPcache JIT"]
+    ML["chege-photos-ml (:8000)\nFastAPI + SigLIP + Florence-2 + Whisper"]
+    MinIO["chege-photos-minio (:9000/:9001)\nPrimary Object Storage\n(chege-photos | chege-models | chege-backups)"]
+    MySQL["chege-photos-mysql (:3306)\nMySQL 8.4 Metadata"]
+    Redis["chege-photos-redis (:6379)\nSessions, Cache & ML Queue"]
+    Qdrant["chege-photos-qdrant (:6333)\n768-d SigLIP + 512-d Face Vectors"]
+
+    Clients --> Caddy
+    Caddy -- php_fastcgi --> Web
+    Web <--> MinIO
+    Web <--> MySQL
+    Web <--> Redis
+    Web --> ML
+    ML <--> MinIO
+    ML <--> Qdrant
+    ML <--> Redis
+    ML <--> MySQL
+```
 
 ---
 
-## Setup and Run
+## Quick Start (Docker Compose)
 
-### Option A — One-Click Automated Deployment (Recommended)
+### 1. Prerequisites
+- Docker Engine 24+ & Docker Compose v2
+- *(Optional)* NVIDIA GPU + NVIDIA Container Toolkit — automatically detected by `scripts/deploy.sh`
 
-From the repository root:
-
+### 2. Configure & Deploy
 ```bash
+git clone <your-repo-url> chege-photos-platform
+cd chege-photos-platform
+cp .env.example .env
+# Edit .env to set strong passwords and ML_API_KEY
 bash scripts/deploy.sh
 ```
 
-> [!NOTE]
-> `deploy.sh` automatically performs pre-flight system diagnostics, detects your LAN IP, initializes `.env`, handles container lifecycle, probes service health sequentially, runs database migrations, and enforces file permissions.
+`scripts/deploy.sh` automatically:
+1. Detects NVIDIA GPU hardware (`WHISPER_DEVICE=cuda` / `float16` / `cu124`) or defaults to CPU (`int8`).
+2. Pulls latest base images and builds patched **PHP 8.4.28 FPM** + **FastAPI ML** (`ffmpeg` included).
+3. Starts stateful engines (`mysql`, `redis`, `qdrant`, `minio`), creates `chege-photos`, `chege-models`, and `chege-backups` buckets, and seeds AI model weights directly into `minio://chege-models/`.
+4. Starts stateless `chege-photos-web`, `chege-photos-nginx`, and `chege-photos-ml`, then runs database migrations and health assertions.
 
-### Option B — Manual Docker Compose
+---
+
+## Running Services & Ports
+
+| Container | Role | URL / Port | Notes |
+| :--- | :--- | :--- | :--- |
+| `chege-photos-caddy` | Reverse Proxy & Local HTTPS | `https://chegephotos.local` / `:80` | `tls internal`, HTTP/3, `/logs*`, `/ml/*`, Android `:80` |
+| `chege-photos-web` | PHP 8.4.28 FPM + OPcache JIT | Internal `:9000` | Stateless compute; patched for CVE-2026-126714 |
+| `chege-photos-ml` | FastAPI Multimodal AI Service | `http://localhost:8000/docs` | SigLIP, Florence-2, Whisper, InsightFace, YOLO |
+| `chege-photos-minio` | Primary S3 Object Storage | `http://localhost:9000` / `:9001` | Stores all media, AI models & cold backups |
+| `chege-photos-qdrant` | Vector Search Engine | `http://localhost:6333/dashboard` | 768-d SigLIP + 512-d ArcFace embeddings |
+| `chege-photos-mysql` | Relational Database | `localhost:3306` | Metadata, users, albums, captions, transcripts |
+| `chege-photos-redis` | Sessions, Cache & Job Broker | `localhost:6379` | Append-only persistence + async ML queue |
+| `chege-photos-dozzle` | Live Container Log Viewer | `http://localhost:8888` | Real-time container stdout/stderr |
+
+---
+
+## Common Operator Commands
 
 ```bash
-# 1. Copy environment configuration
-cp .env.example .env
+# Fast restart without rebuilding images
+bash scripts/deploy.sh --fast
 
-# 2. Launch full platform stack in background
-docker compose up --build -d
+# Re-index existing library with 768-d SigLIP, Florence-2 captions & Whisper transcripts
+docker compose exec -T web php spark ml:reindex-siglip
 
-# 3. Verify running services
-docker compose ps
+# Stream compressed MySQL dump + Qdrant snapshots to minio://chege-backups/
+docker compose exec -T web php spark backup:minio
 
-# 4. Open browser at http://localhost and log in with default credentials.
+# Sync or verify AI weights in minio://chege-models/
+bash scripts/download-models.sh --verify
 
-# 5. To stop containers when finished:
-docker compose stop
+# Stop stack cleanly
+docker compose down
 ```
 
 ---
 
-## Configuration
-
-| Variable | Default | Purpose |
-|---|---|---|
-| `WEB_PORT` | `80` | Host published port for Web application. |
-| `ML_PORT` | `8000` | Host published port for FastAPI ML microservice. |
-| `REDIS_PORT` | `6379` | Host published port for Redis in-memory broker. |
-| `DB_PORT` | `3306` | Host published port for MySQL 8.4 database. |
-| `QDRANT_HTTP_PORT` | `6333` | Host published port for Qdrant HTTP REST API. |
-| `DB_ROOT_PASSWORD` | `root_password` | MySQL root database password. |
-| `ML_API_KEY` | `my_super_secret_shared_token_key_123!` | Shared secret header (`X-API-KEY`) between Web and ML. |
-| `GCP_BUCKET` | *None* | Google Cloud Storage bucket for persistent offsite media backup. |
-
-Full list of operational environment variables: [docs/user/configuration.md](docs/user/configuration.md).
-
----
-
-## Software Engineers
-
-For architecture, database schemas, API specs, and development workflows, see the **[Engineering Handbook](docs/README.md)**:
-
-* [Architecture Overview & C4 Containers](docs/architecture/overview.md)
-* [Protocols & Inter-Service Communication](docs/architecture/communication.md)
-* [Database Schemas & Storage Hierarchy](docs/architecture/data-and-storage.md)
-* [Threat Model & Security Hardening](docs/architecture/threat-model.md)
-* [Mobile REST API Contract](docs/api/contract.md)
-* [ML Microservice OpenAPI Contract](docs/api/ml-openapi.yaml)
-* [CodeIgniter 4 Service Details](docs/services/codeigniter.md)
-* [FastAPI Service Details](docs/services/fastapi.md)
-* [ML Models & Vision Pipelines](docs/services/ml.md)
-* [Local Development Guide](docs/engineering/local-development.md)
-* [Making Changes & Definition of Done](docs/engineering/making-changes.md)
-* [Testing Guide](docs/engineering/testing.md)
-
----
-
-## Two-Repository Project Architecture
-
-Chege Photos is organized into a clean **two-repository arrangement**:
-
-```
-[ Android Companion App ]  (Repository: Chege-Photos-App)
-         │
-         │ (HTTP / Bearer Token - standard port 80)
-         ▼
-┌────────────────────────────────────────────────────────────────────────┐
-│ Chege Photos Platform            (Repository: Chege-Photos-Platform)   │
-│                                                                        │
-│  [ Web / REST Gateway ] (Port 80) ────► [ MySQL 8.4 ] (Port 3306)      │
-│         │         │         │                                          │
-│         │         │         ├─────────► [ MinIO S3 Storage ] (Port 9000│
-│         │         │         │           (Multi-Cloud / GCP S3 Backup)  │
-│         │         ▼         │                                          │
-│         │    [ Redis 7 ] (Port 6379)                                   │
-│         │    (Sessions, Cache & Job Broker)                            │
-│         ▼                   ▲                                          │
-│  [ ML Microservice ] (Port 8000)                                       │
-│         │                   │                                          │
-│         ├───────────────────┘                                          │
-│         ▼                                                              │
-│  [ Qdrant Vector DB ] (Port 6333)                                      │
-│                                                                        │
-│  [ Dozzle Visual Logs ] (Port 8888) ──► Real-Time Container Streaming  │
-└────────────────────────────────────────────────────────────────────────┘
-```
-
-### Sibling Ecosystem Repositories
-
-| Component | Responsibility | Repository URL | Documentation |
-|---|---|---|---|
-| **Platform (Backend)** | Web UI, Mobile REST Gateway, ML Microservice & DBs | [Chege-Photos-Platform](https://github.com/Niccher/Chege-Photos-Platform) | [docs/](https://github.com/Niccher/Chege-Photos-Platform/tree/main/docs) |
-| **Client (Mobile)** | Native Android Companion Client (Compose/Room) | [Chege-Photos-App](https://github.com/Niccher/Chege-Photos-App) | [docs/](https://github.com/Niccher/Chege-Photos-App/tree/main/docs) |
-
----
-
-## License
-
-This project is licensed under the MIT License — see the [LICENSE](LICENSE) file for details.
+## Documentation & Links
+- **Engineering Handbook:** [docs/README.md](docs/README.md)
+- **Architecture Overview:** [docs/architecture/overview.md](docs/architecture/overview.md)
+- **MinIO Storage & Vector Design:** [docs/architecture/data-and-storage.md](docs/architecture/data-and-storage.md)
+- **AI / ML Pipeline Guide:** [docs/services/ml.md](docs/services/ml.md)
+- **Backup & Restore Runbook:** [docs/runbooks/backup-and-restore.md](docs/runbooks/backup-and-restore.md)
+- **License:** [MIT License](LICENSE)

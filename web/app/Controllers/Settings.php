@@ -446,30 +446,51 @@ class Settings extends BaseController
         $user   = auth()->user();
         $userId = (int) auth()->id();
 
-        $dir = FCPATH . 'uploads/avatars/';
-        if (! is_dir($dir)) {
-            mkdir($dir, 0755, true);
-        }
-
         $ext = strtolower((string) pathinfo($file->getName(), PATHINFO_EXTENSION));
         if (! in_array($ext, ['jpg', 'jpeg', 'png', 'webp', 'gif'], true)) {
             $ext = 'jpg';
         }
-        $newName = 'user_' . $userId . '_' . time() . '.' . $ext;
-
-        $oldAvatar = $user->avatar ?? null;
-        $file->move($dir, $newName, true);
+        $newName  = 'user_' . $userId . '_' . time() . '.' . $ext;
         $relative = 'uploads/avatars/' . $newName;
+        $oldAvatar = $user->avatar ?? null;
+
+        $storage  = new \App\Services\Storage\StorageManager();
+        $useMinio = $storage->isConfigured();
+
+        if ($useMinio) {
+            $tmpDir = rtrim(sys_get_temp_dir(), '/') . '/chege_avatar_' . bin2hex(random_bytes(6));
+            @mkdir($tmpDir, 0755, true);
+            $file->move($tmpDir, $newName, true);
+            $up = $storage->uploadFile("{$tmpDir}/{$newName}", $relative, $file->getClientMimeType() ?: 'image/jpeg');
+            @unlink("{$tmpDir}/{$newName}");
+            @rmdir($tmpDir);
+            if (empty($up['success'])) {
+                return $this->response->setJSON(['status' => 'error', 'message' => 'Could not upload avatar to MinIO.']);
+            }
+        } else {
+            $dir = FCPATH . 'uploads/avatars/';
+            if (! is_dir($dir)) {
+                mkdir($dir, 0755, true);
+            }
+            $file->move($dir, $newName, true);
+        }
 
         $user->avatar = $relative;
         $userModel    = new UserModel();
         if (! $userModel->skipValidation(true)->save($user)) {
-            @unlink($dir . $newName);
+            if ($useMinio) {
+                $storage->deleteFile($relative);
+            } else {
+                @unlink(FCPATH . $relative);
+            }
 
             return $this->response->setJSON(['status' => 'error', 'message' => 'Could not save avatar.']);
         }
 
         if ($oldAvatar && str_starts_with($oldAvatar, 'uploads/avatars/')) {
+            if ($useMinio) {
+                $storage->deleteFile($oldAvatar);
+            }
             $oldPath = FCPATH . $oldAvatar;
             if (is_file($oldPath)) {
                 @unlink($oldPath);

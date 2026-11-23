@@ -39,8 +39,9 @@ class CronRun extends BaseCommand
                 try {
                     // Execute CodeIgniter command programmatically
                     command($commandName);
-                } catch (\Exception $e) {
-                    log_message('error', 'Cron command execution failed: ' . $commandName . ' - ' . $e->getMessage());
+                } catch (\Throwable $e) {
+                    log_message('error', sprintf('Cron command execution failed: %s - %s', $commandName, $e->getMessage()));
+                    CLI::error(sprintf('Error executing %s: %s', $commandName, $e->getMessage()));
                 }
             }
         }

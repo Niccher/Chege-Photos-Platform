@@ -124,8 +124,10 @@ def process_photo_pipeline_sync(
     db: Session,
     webapp_url: str | None = None,
     scan_nsfw: bool = True,
+    scan_caption: bool = True,
+    scan_audio: bool = False,
 ) -> dict:
-    model = _require_models()
+    model = _require_models() if scan_faces else None
 
     if webapp_url:
         settings.set_dynamic_webapp_url(webapp_url)
@@ -156,22 +158,73 @@ def process_photo_pipeline_sync(
                 text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_face = 1 WHERE id = :pid"),
                 {"pid": photo_id}
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("Failed to update scanned_face on ignore_faces for photo %s: %s", photo_id, exc)
 
-    from app.services.storage import resolve_photo_path
+    from app.services.storage import EPHEMERAL_SCRATCH_BASE, resolve_photo_path
     photo_path = resolve_photo_path(photo.path, webapp_url=webapp_url)
 
     if not photo_path.exists() or photo_path.stat().st_size == 0:
-        raise HTTPException(404, f"Photo file not found or empty at {photo_path}")
+        raise HTTPException(404, f"Media file not found or empty at {photo_path}")
 
-    img = cv2.imread(str(photo_path))
-    if img is None:
+    # Video / Audio path: transcribe with Whisper Large-v3-Turbo and clean up ephemeral /tmp file
+    if scan_audio:
+        import json
         try:
-            photo_path.unlink(missing_ok=True)
+            from app.ml import transcription, semantic_search
+            tx = transcription.transcribe_media(str(photo_path))
+            transcript_text = tx.get("transcript", "")
+            segments_json = json.dumps(tx.get("segments", []))
+            db.execute(
+                text(
+                    f"""
+                    UPDATE `{_db_schema}`.tbl_photos
+                    SET audio_transcript = :tx,
+                        transcript_segments = :segs,
+                        scanned_audio = 1
+                    WHERE id = :pid
+                    """
+                ),
+                {"tx": transcript_text, "segs": segments_json, "pid": photo_id},
+            )
+            if transcript_text:
+                try:
+                    tx_vec = semantic_search.encode_text(transcript_text[:500])
+                    qdrant = get_qdrant()
+                    qdrant.upsert(
+                        collection_name=settings.qdrant_photo_collection,
+                        points=[PointStruct(
+                            id=str(uuid.uuid4()),
+                            vector=tx_vec,
+                            payload={
+                                "photo_id": photo_id,
+                                "user_id": int(user_id) if user_id is not None else None,
+                                "modality": "audio_transcript",
+                            },
+                        )],
+                    )
+                except Exception as q_err:
+                    log.warning("Failed indexing video transcript vector for media %d: %s", photo_id, q_err)
+            db.commit()
+            return {"photo_id": photo_id, "face_count": 0, "faces": [], "transcript_len": len(transcript_text)}
+        finally:
+            try:
+                if photo_path.exists() and photo_path.is_relative_to(EPHEMERAL_SCRATCH_BASE.resolve()):
+                    photo_path.unlink(missing_ok=True)
+            except Exception:
+                pass
+
+    from app.services.scan import _read_photo
+    try:
+        img = _read_photo(str(photo_path))
+    except Exception as img_err:
+        try:
+            if photo_path.exists() and photo_path.is_relative_to(EPHEMERAL_SCRATCH_BASE.resolve()):
+                photo_path.unlink(missing_ok=True)
         except Exception:
             pass
-        raise HTTPException(400, f"Could not decode image file at {photo_path}")
+        log.error("Could not decode image file at %s: %s", photo_path, img_err)
+        raise HTTPException(400, f"Could not decode image file at {photo_path}: {img_err}")
 
     results = []
 
@@ -327,29 +380,62 @@ def process_photo_pipeline_sync(
         except Exception as exc:
             log.error("Object detection failed for photo %d: %s", photo_id, exc)
 
-    # 3. Semantic Search (CLIP)
+    # 3. Semantic Search (SigLIP 768-d)
     if scan_clip:
         try:
             from app.ml import semantic_search
-            clip_emb = semantic_search.encode_image(str(photo_path))
+            siglip_emb = semantic_search.encode_image(str(photo_path))
             qdrant = get_qdrant()
             qdrant.upsert(
                 collection_name=settings.qdrant_photo_collection,
                 points=[PointStruct(
                     id=str(uuid.uuid4()),
-                    vector=clip_emb,
+                    vector=siglip_emb,
                     payload={
                         "photo_id": photo_id,
                         "user_id": int(user_id) if user_id is not None else None,
+                        "model": settings.siglip_model_name,
                     }
                 )]
             )
-            db.execute(
-                text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_clip = 1 WHERE id = :pid"),
-                {"pid": photo_id}
-            )
+            try:
+                db.execute(
+                    text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_clip = 1, embedding_model = :em WHERE id = :pid"),
+                    {"em": settings.siglip_model_name, "pid": photo_id}
+                )
+            except Exception:
+                db.execute(
+                    text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_clip = 1 WHERE id = :pid"),
+                    {"pid": photo_id}
+                )
         except Exception as exc:
-            log.error("CLIP embedding failed for photo %d: %s", photo_id, exc)
+            log.error("SigLIP embedding failed for photo %d: %s", photo_id, exc)
+
+    # 3b. Dense Captioning & OCR (Microsoft Florence-2)
+    if scan_caption:
+        try:
+            from app.ml import florence
+            fl_res = florence.analyze_image(str(photo_path))
+            ai_caption = fl_res.get("caption", "")
+            fl_ocr = fl_res.get("ocr_text", "")
+            try:
+                db.execute(
+                    text(
+                        f"""
+                        UPDATE `{_db_schema}`.tbl_photos
+                        SET ai_caption = :cap,
+                            ocr_text = CASE WHEN :ocr != '' THEN :ocr ELSE ocr_text END,
+                            scanned_caption = 1,
+                            scanned_ocr = 1
+                        WHERE id = :pid
+                        """
+                    ),
+                    {"cap": ai_caption, "ocr": fl_ocr, "pid": photo_id},
+                )
+            except Exception as cap_db_err:
+                log.debug("Florence-2 columns not yet migrated: %s", cap_db_err)
+        except Exception as exc:
+            log.error("Florence-2 analysis failed for photo %d: %s", photo_id, exc)
 
     # 4. Sensitive Content Moderation (NSFW / Intimate)
     if scan_nsfw:
@@ -397,6 +483,11 @@ def process_photo_pipeline_sync(
             log.error("NSFW sensitivity analysis failed for photo %d: %s", photo_id, exc)
 
     db.commit()
+    try:
+        if photo_path.exists() and photo_path.is_relative_to(EPHEMERAL_SCRATCH_BASE.resolve()):
+            photo_path.unlink(missing_ok=True)
+    except Exception:
+        pass
     return {"photo_id": photo_id, "face_count": len(results), "faces": results}
 
 
@@ -407,6 +498,8 @@ def process_photo_pipeline_queued(
     scan_clip: bool,
     webapp_url: str | None = None,
     scan_nsfw: bool = True,
+    scan_caption: bool = True,
+    scan_audio: bool = False,
 ):
     from app.database import SessionLocal
     from datetime import datetime, timezone
@@ -430,6 +523,8 @@ def process_photo_pipeline_queued(
             db=db,
             webapp_url=webapp_url,
             scan_nsfw=scan_nsfw,
+            scan_caption=scan_caption,
+            scan_audio=scan_audio,
         )
 
         scan.status = "completed"
@@ -460,6 +555,8 @@ async def encode_photo(
     scan_tags: bool = Form(True),
     scan_clip: bool = Form(True),
     scan_nsfw: bool = Form(True),
+    scan_caption: bool = Form(True),
+    scan_audio: bool = Form(False),
     async_task: bool = Form(False),
     webapp_url: str | None = Form(None),
     x_webapp_url: str | None = Header(None, alias="X-Webapp-Url"),
@@ -479,6 +576,8 @@ async def encode_photo(
             scan_clip=scan_clip,
             webapp_url=target_webapp,
             scan_nsfw=scan_nsfw,
+            scan_caption=scan_caption,
+            scan_audio=scan_audio,
         )
         return {"status": "queued", "photo_id": photo_id}
     else:
@@ -490,6 +589,8 @@ async def encode_photo(
             db=db,
             webapp_url=target_webapp,
             scan_nsfw=scan_nsfw,
+            scan_caption=scan_caption,
+            scan_audio=scan_audio,
         )
 
 
@@ -1104,8 +1205,8 @@ def discard_photo_faces(
                             points_selector=[c.centroid_point_id],
                         )
                         centroid_points_removed += 1
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("Failed to delete centroid %s from Qdrant: %s", c.centroid_point_id, exc)
             db.query(FaceCluster).filter(FaceCluster.person_id == pid).delete()
             db.query(Person).filter(Person.id == pid).delete()
             deleted_persons += 1
@@ -1183,8 +1284,8 @@ def delete_by_photo_ids(
                     collection_name=settings.qdrant_collection,
                     points_selector=[pid],
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.warning("Failed to delete point %s from Qdrant: %s", pid, exc)
 
     # Delete face encodings
     deleted_faces = db.query(FaceEncoding).filter(
@@ -1208,8 +1309,8 @@ def delete_by_photo_ids(
                             points_selector=[c.centroid_point_id],
                         )
                         centroid_points_removed += 1
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        log.warning("Failed to delete centroid %s from Qdrant: %s", c.centroid_point_id, exc)
             db.query(FaceCluster).filter(FaceCluster.person_id == pid).delete()
             db.query(Person).filter(Person.id == pid).delete()
             deleted_persons += 1

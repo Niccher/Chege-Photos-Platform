@@ -7,11 +7,12 @@ import cv2
 import numpy as np
 
 from app.config import settings
+from app.services.model_store import MODELS_CACHE_ROOT, ensure_model_file
 
 log = logging.getLogger("ml_chege_photos.object_detection")
 
 MODEL_URL = "https://huggingface.co/Kalray/yolov8/resolve/main/yolov8n.onnx"
-MODEL_PATH = "/app/models/yolov8n.onnx"
+MODEL_PATH = str(MODELS_CACHE_ROOT / "yolo" / "yolov8n.onnx")
 
 COCO_CLASSES = [
     "person", "bicycle", "car", "motorcycle", "airplane", "bus", "train", "truck", "boat",
@@ -32,7 +33,11 @@ _net = None
 def download_yolov8_model():
     if not os.path.exists(MODEL_PATH):
         os.makedirs(os.path.dirname(MODEL_PATH), exist_ok=True)
-        log.info("Downloading YOLOv8n ONNX model from %s ...", MODEL_URL)
+        try:
+            ensure_model_file("yolo/yolov8n.onnx", "yolo/yolov8n.onnx")
+            return
+        except Exception as minio_err:
+            log.warning("MinIO YOLOv8n fetch unavailable (%s); downloading from %s ...", minio_err, MODEL_URL)
         try:
             urllib.request.urlretrieve(MODEL_URL, MODEL_PATH)
             log.info("YOLOv8n ONNX model downloaded successfully")

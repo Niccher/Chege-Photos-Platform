@@ -13,6 +13,9 @@
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="<?= esc($appSiteName) ?>">
     <link rel="apple-touch-icon" href="<?= base_url('icons/icon-192.png') ?>">
+    <meta name="csrf-token-name" content="<?= csrf_token() ?>">
+    <meta name="csrf-token" content="<?= csrf_hash() ?>">
+    <meta name="csrf-header" content="<?= config('Security')->headerName ?? 'X-CSRF-TOKEN' ?>">
     <!-- Bulletproof Zero-Dependency Theme Engine -->
     <script>
         window.setAppTheme = function(theme) {
@@ -1038,6 +1041,26 @@
 
 <!-- jQuery -->
 <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
+<script>
+    if (typeof jQuery !== 'undefined') {
+        var csrfHeader = $('meta[name="csrf-header"]').attr('content') || 'X-CSRF-TOKEN';
+        var csrfToken = $('meta[name="csrf-token"]').attr('content') || '';
+        if (csrfToken) {
+            $.ajaxSetup({
+                headers: { [csrfHeader]: csrfToken }
+            });
+        }
+        $(document).ajaxComplete(function(event, xhr, settings) {
+            var newCsrf = xhr.getResponseHeader(csrfHeader);
+            if (newCsrf) {
+                $('meta[name="csrf-token"]').attr('content', newCsrf);
+                $.ajaxSetup({
+                    headers: { [csrfHeader]: newCsrf }
+                });
+            }
+        });
+    }
+</script>
 <!-- Bootstrap 5 Bundle JS -->
 <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
 <!-- SweetAlert2 -->

@@ -41,6 +41,33 @@ class Faces extends BaseController
         }
     }
 
+    protected function userOwnsPerson(int $personId, int $userId): bool
+    {
+        if (auth()->loggedIn() && auth()->user()->inGroup('superadmin')) {
+            return true;
+        }
+
+        $personModel = new PersonModel();
+        $person = $personModel->find($personId);
+        if (!$person) {
+            return false;
+        }
+
+        if (!empty($person['user_id']) && (int)$person['user_id'] === $userId) {
+            return true;
+        }
+
+        // Check if user owns any photo containing a face for this person
+        $db = \Config\Database::connect();
+        $hasPhoto = $db->table('tbl_face_encodings fe')
+            ->join('tbl_photos ph', 'ph.id = fe.photo_id')
+            ->where('fe.person_id', $personId)
+            ->where('ph.user_id', $userId)
+            ->countAllResults() > 0;
+
+        return $hasPhoto;
+    }
+
     // ── Web UI ─────────────────────────────────────────────────
 
     public function index()
@@ -291,18 +318,33 @@ class Faces extends BaseController
 
     public function apiPersons(): ResponseInterface
     {
+        $userId = auth()->id();
+        if (!$userId) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Unauthorized',
+            ])->setStatusCode(401);
+        }
+
         $personModel = new PersonModel();
         $faceModel   = new FaceEncodingModel();
         $photoModel  = new \App\Models\PhotoModel();
-        $persons = $personModel->getPersonsWithFaceCount();
+        $persons = $personModel->getPersonsWithFaceCountForUser($userId);
 
         return $this->response->setJSON([
             'status'  => 'success',
-            'persons' => array_map(function($p) use ($faceModel, $photoModel) {
+            'persons' => array_map(function($p) use ($faceModel, $photoModel, $userId) {
                 $thumb = null;
-                $firstFace = $faceModel->where('person_id', $p['id'])->orderBy('id', 'ASC')->first();
+                $firstFace = $faceModel
+                    ->select('tbl_face_encodings.*')
+                    ->join('tbl_photos', 'tbl_photos.id = tbl_face_encodings.photo_id')
+                    ->where('tbl_face_encodings.person_id', $p['id'])
+                    ->where('tbl_photos.user_id', $userId)
+                    ->where('tbl_photos.is_vault', 0)
+                    ->orderBy('tbl_face_encodings.id', 'ASC')
+                    ->first();
                 if ($firstFace) {
-                    $photo = $photoModel->where('is_vault', 0)->find($firstFace['photo_id']);
+                    $photo = $photoModel->where('user_id', $userId)->where('is_vault', 0)->find($firstFace['photo_id']);
                     if ($photo) {
                         $thumb = [
                             'path' => $photo['path'],
@@ -410,6 +452,23 @@ class Faces extends BaseController
 
     public function apiScan(int $photoId): ResponseInterface
     {
+        $userId = auth()->id();
+        if (!$userId) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Unauthorized',
+            ])->setStatusCode(401);
+        }
+
+        $photoModel = new \App\Models\PhotoModel();
+        $photo = $photoModel->where('user_id', $userId)->find($photoId);
+        if (!$photo && ! (auth()->loggedIn() && auth()->user()->inGroup('superadmin'))) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Photo not found or access denied',
+            ])->setStatusCode(404);
+        }
+
         $result = $this->mlProxy('POST', '/api/v1/faces/encode', [
             'form_params' => ['photo_id' => $photoId],
         ]);
@@ -470,8 +529,15 @@ class Faces extends BaseController
 
     public function apiNamePerson(int $personId): ResponseInterface
     {
-        $name = $this->request->getPost('name');
-        if (!$name) {
+        $userId = auth()->id();
+        if (!$userId) {
+            return $this->response->setJSON([
+                'status' => 'error', 'message' => 'Unauthorized',
+            ])->setStatusCode(401);
+        }
+
+        $name = trim((string) $this->request->getPost('name'));
+        if ($name === '') {
             return $this->response->setJSON([
                 'status' => 'error', 'message' => 'Name required',
             ])->setStatusCode(400);
@@ -485,7 +551,17 @@ class Faces extends BaseController
             ])->setStatusCode(404);
         }
 
-        $personModel->update($personId, ['name' => $name]);
+        if (!$this->userOwnsPerson($personId, $userId)) {
+            return $this->response->setJSON([
+                'status' => 'error', 'message' => 'Forbidden: You do not have permission to rename this person',
+            ])->setStatusCode(403);
+        }
+
+        $updateData = ['name' => $name];
+        if (empty($person['user_id'])) {
+            $updateData['user_id'] = $userId;
+        }
+        $personModel->update($personId, $updateData);
 
         return $this->response->setJSON([
             'status' => 'success',
@@ -818,6 +894,13 @@ class Faces extends BaseController
 
     public function apiMergePersons(): ResponseInterface
     {
+        $userId = auth()->id();
+        if (!$userId) {
+            return $this->response->setJSON([
+                'status' => 'error', 'message' => 'Unauthorized',
+            ])->setStatusCode(401);
+        }
+
         $sourceId = (int) $this->request->getPost('source_person_id');
         $targetId = (int) $this->request->getPost('target_person_id');
 
@@ -834,6 +917,12 @@ class Faces extends BaseController
             return $this->response->setJSON([
                 'status' => 'error', 'message' => 'Person not found',
             ])->setStatusCode(404);
+        }
+
+        if (!$this->userOwnsPerson($sourceId, $userId) || !$this->userOwnsPerson($targetId, $userId)) {
+            return $this->response->setJSON([
+                'status' => 'error', 'message' => 'Forbidden: You do not have permission to merge these person entities',
+            ])->setStatusCode(403);
         }
 
         $faceModel = new FaceEncodingModel();
@@ -974,6 +1063,13 @@ class Faces extends BaseController
 
     public function apiResetScans(): ResponseInterface
     {
+        if (! auth()->loggedIn() || ! auth()->user() || ! auth()->user()->inGroup('superadmin')) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Forbidden: Superadmin privilege required'
+            ])->setStatusCode(403);
+        }
+
         $result = $this->mlProxy('DELETE', '/api/v1/faces/reset');
 
         return $this->response->setJSON([
@@ -984,6 +1080,13 @@ class Faces extends BaseController
 
     public function apiForceScanAll(): ResponseInterface
     {
+        if (! auth()->loggedIn() || ! auth()->user() || ! auth()->user()->inGroup('superadmin')) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Forbidden: Superadmin privilege required'
+            ])->setStatusCode(403);
+        }
+
         $resetResult = $this->mlProxy('DELETE', '/api/v1/faces/reset');
         if (isset($resetResult['error'])) {
             return $this->response->setJSON([

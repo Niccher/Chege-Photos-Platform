@@ -40,6 +40,17 @@ class Admin extends BaseController
         return 'http://ml-qdrant:6333';
     }
 
+    protected function requireSuperadmin(): ?ResponseInterface
+    {
+        if (! auth()->loggedIn() || ! auth()->user() || ! auth()->user()->inGroup('superadmin')) {
+            return $this->response->setJSON([
+                'status'  => 'error',
+                'message' => 'Forbidden: Superadmin privilege required'
+            ])->setStatusCode(403);
+        }
+        return null;
+    }
+
     public function home()
     {
         $userModel  = new UserModel();
@@ -686,9 +697,19 @@ class Admin extends BaseController
         $query = $db->query("SELECT SUM(data_length + index_length) AS size FROM information_schema.TABLES WHERE table_schema = '" . $db->database . "'");
         $dbSize = $query->getRow()->size ?? 0;
 
-        // Directory Stats
+        // Directory / MinIO Primary Storage Stats
         $uploadStats = $this->getDirectoryStats(FCPATH . 'uploads', ['avatars']);
         $thumbStats  = $this->getDirectoryStats(FCPATH . 'thumbnails');
+        if (($uploadStats['size'] ?? 0) === 0) {
+            $minioAgg = $db->table('tbl_photos')
+                ->selectCount('id', 'cnt')
+                ->selectSum('size', 'total_size')
+                ->where('deleted_at', null)
+                ->get()
+                ->getRowArray();
+            $uploadStats['count'] = (int) ($minioAgg['cnt'] ?? 0);
+            $uploadStats['size']  = (int) ($minioAgg['total_size'] ?? 0);
+        }
 
         $gcpService = new \App\Services\GcpStorageService();
 
@@ -759,6 +780,10 @@ class Admin extends BaseController
 
     public function saveStorageSettings()
     {
+        if ($denied = $this->requireSuperadmin()) {
+            return $denied;
+        }
+
         $rules = [
             'autoPurgeMonths' => 'required|integer|greater_than_equal_to[0]',
         ];
@@ -967,6 +992,10 @@ class Admin extends BaseController
 
     public function wipeSystem()
     {
+        if ($denied = $this->requireSuperadmin()) {
+            return $denied;
+        }
+
         helper('audit');
         try {
             $db = \Config\Database::connect();
@@ -1033,6 +1062,10 @@ class Admin extends BaseController
 
     public function purgeMediaKeepTokens()
     {
+        if ($denied = $this->requireSuperadmin()) {
+            return $denied;
+        }
+
         helper('audit');
         try {
             $db = \Config\Database::connect();
@@ -1148,6 +1181,10 @@ class Admin extends BaseController
 
     public function resetDataKeepUsers()
     {
+        if ($denied = $this->requireSuperadmin()) {
+            return $denied;
+        }
+
         helper('audit');
         try {
             $db = \Config\Database::connect();
@@ -1186,6 +1223,10 @@ class Admin extends BaseController
 
     public function emptyTrashAll()
     {
+        if ($denied = $this->requireSuperadmin()) {
+            return $denied;
+        }
+
         helper('audit');
         try {
             $db = \Config\Database::connect();

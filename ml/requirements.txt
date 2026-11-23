@@ -12,9 +12,14 @@ hdbscan==0.8.44
 scikit-learn==1.9.0
 opencv-python-headless==5.0.0.93
 Pillow==12.3.0
---extra-index-url https://download.pytorch.org/whl/cpu
-torch
-transformers
+pillow-heif>=0.18.0
+transformers>=4.46.0,<4.50.0
+sentencepiece>=0.2.0
+timm>=1.0.0
+einops>=0.8.0
+faster-whisper>=1.1.0
+huggingface-hub>=0.25.0
+boto3>=1.35.0
 pytesseract==0.3.13
 opennsfw2
 nudenet

@@ -49,27 +49,39 @@ class MediaFallback extends BaseController
         $relativePath = "{$type}/{$subPath}";
         $localPath = FCPATH . $relativePath;
 
-        // 2. If file already exists locally on disk, stream it immediately
-        if (file_exists($localPath) && is_file($localPath) && filesize($localPath) > 0) {
-            return $this->streamFile($localPath);
+        // Security: Disallow serving vault files through public media endpoints
+        $db = \Config\Database::connect();
+        $isVault = $db->table('tbl_photos')
+            ->groupStart()
+                ->where('path', $relativePath)
+                ->orWhere('path', '/' . $relativePath)
+                ->orWhere('thumbnail_path', $relativePath)
+                ->orWhere('thumbnail_path', '/' . $relativePath)
+            ->groupEnd()
+            ->where('is_vault', 1)
+            ->countAllResults() > 0;
+
+        if ($isVault) {
+            return $this->response->setStatusCode(403)->setBody('Forbidden: Private vault media cannot be served publicly.');
         }
 
-        // 3. File is missing locally (e.g. fresh container startup) -> Check Primary Storage (MinIO / S3)
+        // 2. MinIO Primary Zero-Disk Streaming (stateless web container — never writes to FCPATH)
         try {
             $storage = new \App\Services\Storage\StorageManager();
             if ($storage->isConfigured()) {
-                $targetDir = dirname($localPath);
-                if (!is_dir($targetDir)) {
-                    @mkdir($targetDir, 0777, true);
-                }
-
-                $downloaded = $storage->downloadFile($relativePath, $localPath);
-                if ($downloaded && file_exists($localPath) && filesize($localPath) > 0) {
-                    return $this->streamFile($localPath);
+                $rangeHeader = $this->request->getHeaderLine('Range') ?: null;
+                $ifNoneMatch = $this->request->getHeaderLine('If-None-Match') ?: null;
+                if ($storage->streamObject($relativePath, $rangeHeader, $ifNoneMatch)) {
+                    return;
                 }
             }
         } catch (\Throwable $e) {
-            log_message('warning', 'Primary storage hydration failed for ' . $relativePath . ': ' . $e->getMessage());
+            log_message('warning', 'Primary MinIO zero-disk stream failed for ' . $relativePath . ': ' . $e->getMessage());
+        }
+
+        // 3. Legacy fallback: if file exists locally on disk, stream it
+        if (file_exists($localPath) && is_file($localPath) && filesize($localPath) > 0) {
+            return $this->streamFile($localPath);
         }
 
         // 4. File is missing in primary storage -> Fallback to GCP backup

@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, Header, HTTPException, status
+from fastapi import APIRouter, Header, HTTPException, status, Depends
 from sqlalchemy import text
 
+from app.auth import get_api_key
 from app.database import get_db, get_qdrant
 from app.ml.loader import get_model_status
 
@@ -10,11 +11,8 @@ router = APIRouter(prefix="/api/v1", tags=["health"])
 
 
 @router.get("/health")
-def health_check(x_webapp_url: str | None = Header(None, alias="X-Webapp-Url")):
+def health_check():
     """Liveness / readiness check."""
-    if x_webapp_url:
-        from app.config import settings
-        settings.set_dynamic_webapp_url(x_webapp_url)
 
     # ── Database ────────────────────────────────────────────────
     db_ok = False
@@ -102,7 +100,7 @@ def health_check(x_webapp_url: str | None = Header(None, alias="X-Webapp-Url")):
     }
 
 
-@router.get("/health/diagnostics")
+@router.get("/health/diagnostics", dependencies=[Depends(get_api_key)])
 def health_diagnostics(x_webapp_url: str | None = Header(None, alias="X-Webapp-Url")):
     """Deep diagnostics endpoint: inspects failure reasons, photo reachability, and pipeline health."""
     from app.config import settings

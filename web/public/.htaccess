@@ -3,7 +3,7 @@
 # Pass and set environment variables
 # ----------------------------------------------------------------------
 PassEnv CI_ENVIRONMENT
-SetEnvIf Request_URI ".*" CI_ENVIRONMENT=development
+# SetEnvIf Request_URI ".*" CI_ENVIRONMENT=development
 
 # ----------------------------------------------------------------------
 # CORS Configuration
@@ -41,6 +41,9 @@ Options -Indexes
 	RewriteCond %{HTTPS} !=on
 	RewriteCond %{HTTP_HOST} ^www\.(.+)$ [NC]
 	RewriteRule ^ http://%1%{REQUEST_URI} [R=301,L]
+
+	# Disallow direct static access to private vault directory
+	RewriteRule ^uploads/vault/ - [F,L]
 
 	# Checks to see if the user is attempting to access a valid file,
 	# such as an image or css document, if this isn't true it sends the

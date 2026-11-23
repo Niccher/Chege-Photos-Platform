@@ -154,6 +154,8 @@ class ApiController extends BaseController
                 $query->groupStart()
                       ->like('filename', $q)
                       ->orLike('ocr_text', $q)
+                      ->orLike('ai_caption', $q)
+                      ->orLike('audio_transcript', $q)
                       ->orLike('exif_data', $q)
                       ->orLike('taken_at', $q);
                 if (!empty($photoIds)) {

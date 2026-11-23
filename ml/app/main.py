@@ -102,18 +102,8 @@ async def lifespan(app: FastAPI):
     log.info("Shutting down ML Chege Photos service ...")
 
 
-from fastapi import Depends, HTTPException, status
-from fastapi.security.api_key import APIKeyHeader
-
-API_KEY_NAME = "X-API-KEY"
-api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=True)
-
-async def get_api_key(api_key_header_value: str = Depends(api_key_header)):
-    if api_key_header_value != settings.ml_api_key:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="Forbidden: Invalid or missing X-API-KEY credential header"
-        )
+from fastapi import Depends
+from app.auth import get_api_key
 
 app = FastAPI(
     title="ML Chege Photos",

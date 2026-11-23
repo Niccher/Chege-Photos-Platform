@@ -1,72 +1,32 @@
-# Runbook: Database & Media Backup and Restore
+# Backup & Restore Runbook
 
-Operational guidelines for automated snapshotting and full disaster recovery of the MySQL database and uploaded media assets.
-
----
-
-## 1. Backup Strategy Overview
-
-Chege Photos WebApp relies on two primary data stores:
-1. **Relational Database (`db_chege_photos`)**: MySQL 8.4 on port 9306 containing users, photo metadata, album links, and facial attributes.
-2. **Media Assets (`public/uploads/` & `public/thumbnails/`)**: Original files and generated thumbnails organized in `{user_id}/{YYYY}/{MM}/` hierarchy.
+All user media (`chege-photos`) and AI models (`chege-models`) already reside durably in MinIO. To back up the stateful engine volumes (**MySQL 8.4** and **Qdrant**) without accumulating files on the web container, use the stateless MinIO cold backup command.
 
 ---
 
-## 2. Backup Procedures
-
-### A. Database Snapshot (`mysqldump`)
-
-Create a compressed transactional snapshot of the database:
+## Automated Cold Backup to `minio://chege-backups/`
 
 ```bash
-# Execute mysqldump inside container
-docker compose exec mysql mysqldump \
-  -u root -proot_password \
-  --single-transaction \
-  --quick \
-  --routines \
-  --triggers \
-  db_chege_photos | gzip > backup_db_chege_photos_$(date +%Y%m%d_%H%M%S).sql.gz
+docker compose exec -T web php spark backup:minio
 ```
 
-### B. Uploaded Media Archive
-
-Archive local photos and thumbnails with path preservation:
-
-```bash
-# Tar and compress uploads and thumbnails
-tar -czvf backup_media_$(date +%Y%m%d_%H%M%S).tar.gz \
-  public/uploads \
-  public/thumbnails
-```
+This command:
+1. Streams a consistent compressed `mysqldump --single-transaction` archive to `minio://chege-backups/mysql/db_chege_photos_<TIMESTAMP>.sql.gz`.
+2. Triggers Qdrant snapshots for `face_embeddings` and `photo_embeddings` and uploads them to `minio://chege-backups/qdrant/<collection>/`.
+3. Deletes all ephemeral `/tmp` scratch files immediately.
 
 ---
 
-## 3. Full Restoration Procedure
+## Restoring from Backup
 
-### Step 1: Restore Database
+### 1. Restore MySQL
+Download the `.sql.gz` archive from `minio://chege-backups/mysql/` and pipe into `chege-photos-mysql`:
 ```bash
-# Decompress and import database dump
-gunzip < backup_db_chege_photos_YYYYMMDD_HHMMSS.sql.gz | \
-  docker compose exec -T mysql mysql -u root -proot_password db_chege_photos
+gunzip -c db_chege_photos_<TIMESTAMP>.sql.gz | docker compose exec -T mysql mysql -u root -p"${DB_ROOT_PASSWORD}" db_chege_photos
 ```
 
-### Step 2: Restore Media Files
+### 2. Rebuild Qdrant Vectors (Alternative to Snapshot Restore)
+Because all originals live in `minio://chege-photos/`, Qdrant 768-d SigLIP embeddings, Florence-2 captions, and Whisper transcripts can always be regenerated cleanly:
 ```bash
-# Extract media archives into webapp root
-tar -xzvf backup_media_YYYYMMDD_HHMMSS.tar.gz -C .
-
-# Set proper write permissions for Apache user
-chmod -R 775 public/uploads public/thumbnails
-```
-
-### Step 3: Verify Integrity
-```bash
-# 1. Run database migrations to ensure schema synchronization
-docker compose exec webapp php spark migrate
-
-# 2. Check HTTP API health
-curl -I http://localhost:9005/api/v1/health
-
-# 3. Verify media fallback and thumbnail loading in browser
+docker compose exec -T web php spark ml:reindex-siglip
 ```

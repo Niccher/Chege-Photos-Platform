@@ -1,48 +1,47 @@
-# Chege Photos Platform — Engineering Handbook
+# Chege Photos Platform — Engineering Documentation
 
-Welcome to the engineering documentation for Chege Photos Platform. This monorepo houses the complete backend infrastructure: CodeIgniter 4 Web application, FastAPI computer vision microservice, Qdrant vector database, and MySQL relational store.
+Welcome to the engineering handbook for **Chege Photos Platform** (`chege-photos`). For quick operator setup, see the root [README.md](../README.md).
 
-If you only need to deploy, configure, or run the platform with Docker Compose, see the [Root README](../README.md).
+```mermaid
+flowchart LR
+    subgraph ClientRepo["Chege-Photos-App (Android Repo)"]
+        Android["Kotlin + Jetpack Compose\nRoom v7 + WorkManager"]
+    end
 
----
+    subgraph PlatformRepo["Chege-Photos-Platform (Backend Monorepo)"]
+        Caddy["chege-photos-caddy (:80/:443)\nhttps://chegephotos.local"]
+        Web["chege-photos-web\nPHP 8.4.28 FPM (:9000)"]
+        ML["chege-photos-ml\nFastAPI + PyTorch (:8000)"]
+        MinIO["chege-photos-minio (:9000)\nPrimary Object Store"]
+        Engines["MySQL 8.4 · Redis 7 · Qdrant"]
+    end
 
-## Documentation Navigation
-
-| I want to… | Go here |
-|---|---|
-| **Run the full stack with one command** | [../README.md](../README.md) |
-| **Understand system architecture & C4 containers** | [architecture/overview.md](architecture/overview.md) |
-| **Inspect protocols, cURL proxies & sequences** | [architecture/communication.md](architecture/communication.md) |
-| **Review database schemas, vectors & storage hierarchy** | [architecture/data-and-storage.md](architecture/data-and-storage.md) |
-| **Review deployment & container topology** | [architecture/deployment.md](architecture/deployment.md) |
-| **Inspect threat model & STRIDE security analysis** | [architecture/threat-model.md](architecture/threat-model.md) |
-| **Review Mobile Client REST API contract** | [api/contract.md](api/contract.md) |
-| **Inspect ML microservice OpenAPI specification** | [api/ml-openapi.yaml](api/ml-openapi.yaml) |
-| **Work on CodeIgniter 4 controllers & Spark CLI** | [services/codeigniter.md](services/codeigniter.md) |
-| **Work on FastAPI microservice & routing** | [services/fastapi.md](services/fastapi.md) |
-| **Inspect ML models (InsightFace, YOLOv8, CLIP, NSFW)** | [services/ml.md](services/ml.md) |
-| **Set up local development (PHP & Python)** | [engineering/local-development.md](engineering/local-development.md) |
-| **Add a feature safely & Definition of Done** | [engineering/making-changes.md](engineering/making-changes.md) |
-| **Manage database migrations & query scoping** | [engineering/database.md](engineering/database.md) |
-| **Execute test suites (PHPUnit & Pytest)** | [engineering/testing.md](engineering/testing.md) |
-| **Review CI/CD pipelines & automated tests** | [engineering/ci.md](engineering/ci.md) |
-| **Review contributing guidelines & PR workflow** | [engineering/contributing.md](engineering/contributing.md) |
-| **Troubleshoot compiler & dev environment issues** | [engineering/troubleshooting.md](engineering/troubleshooting.md) |
-| **Review security & token encryption architecture** | [engineering/security.md](engineering/security.md) |
-| **Inspect ecosystem version matrix & compatibility** | [engineering/release.md](engineering/release.md) |
-| **Execute container restart & recovery runbook** | [runbooks/restart.md](runbooks/restart.md) |
-| **Execute database & media backup/restore runbook** | [runbooks/backup-and-restore.md](runbooks/backup-and-restore.md) |
-| **Review ADR 0001: Hybrid QR & Numeric Pairing** | [adr/0001-hybrid-qr-numeric-pairing.md](adr/0001-hybrid-qr-numeric-pairing.md) |
-| **Review ADR 0002: Unified Feed Aggregation** | [adr/0002-unified-feed-aggregation.md](adr/0002-unified-feed-aggregation.md) |
-| **Review ADR 0004: Decoupled ML Microservice** | [adr/0004-decoupled-microservice-ml.md](adr/0004-decoupled-microservice-ml.md) |
-| **Review operator configuration & environment** | [user/configuration.md](user/configuration.md) |
-| **Troubleshoot runtime & startup issues** | [user/troubleshooting.md](user/troubleshooting.md) |
+    Android -- REST /api/v1/ --> Caddy
+    Caddy -- php_fastcgi --> Web
+    Web --> ML
+    Web <--> MinIO
+    ML <--> MinIO
+    Web <--> Engines
+    ML <--> Engines
+```
 
 ---
 
-### Project Repositories (Two-Repo Arrangement)
+## Documentation Map
 
-| Component | Responsibility | Repository URL | Documentation |
-|---|---|---|---|
-| **Platform (Backend)** | Web UI, Mobile REST Gateway, ML Microservice & DBs | [Chege-Photos-Platform](https://github.com/Niccher/Chege-Photos-Platform) | [docs/](https://github.com/Niccher/Chege-Photos-Platform/tree/main/docs) |
-| **Client (Mobile)** | Native Android Companion Client (Compose/Room) | [Chege-Photos-App](https://github.com/Niccher/Chege-Photos-App) | [docs/](https://github.com/Niccher/Chege-Photos-App/tree/main/docs) |
+### Architecture
+- [System Overview](architecture/overview.md) — C4 containers, Caddy 2 + PHP 8.4.28 FPM split, stateless compute model, two-repo boundaries
+- [Data & Storage](architecture/data-and-storage.md) — MinIO-primary buckets (`chege-photos`, `chege-models`, `chege-backups`), POSIX vs Object storage boundary, Qdrant 768-d/512-d collections
+- [Communication & Sequences](architecture/communication.md) — Upload, zero-disk MinIO streaming, async Redis ML queue, auth flows
+- [Deployment](architecture/deployment.md) — Docker Compose, GPU auto-detection (`docker-compose.gpu.yml`), race-free `scripts/deploy.sh`
+- [Threat Model](architecture/threat-model.md) — STRIDE analysis, PHP 8.4.28 CVE mitigations, Vault isolation
+
+### Services
+- [CodeIgniter 4 WebApp (PHP 8.4.28 FPM + Caddy 2)](services/codeigniter.md)
+- [FastAPI Gateway](services/fastapi.md)
+- [AI & ML Pipelines (SigLIP, Florence-2, Whisper, InsightFace, YOLO, OpenNSFW)](services/ml.md)
+
+### Operations & Engineering
+- [Backup & Restore Runbook](runbooks/backup-and-restore.md)
+- [Graceful Restart Runbook](runbooks/restart.md)
+- [Local Development](engineering/local-development.md) · [Database Migrations](engineering/database.md) · [Testing](engineering/testing.md) · [Security](engineering/security.md)

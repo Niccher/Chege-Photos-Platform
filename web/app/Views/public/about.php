@@ -65,35 +65,33 @@
     </div>
     <div class="diagram-box">
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
-│                        Chege Photos Platform (Docker Network)                          │
+│                    Chege Photos Platform (chege-photos-net)                            │
 │                                                                                        │
-│  Browser / Client ──HTTP:80──▶ Web Application (PHP 8.4 Apache / CodeIgniter 4)        │
-│                                  │                                                     │
-│                                  ├── MySQL 8.4 (Port 3306)                             │
-│                                  │   Users, albums, EXIF, tags, person metadata        │
-│                                  │                                                     │
-│                                  ├── MinIO Object Storage (Port 9000 S3 / 9001 Console)│
-│                                  │   Primary S3 bucket (Multi-Cloud / AWS / GCP backup)│
-│                                  │                                                     │
-│                                  ├── Redis 7 (Port 6379)                               │
-│                                  │   Session cache (MySQL fallback) & scan job queues  │
-│                                  │                                                     │
-│                                  ├── ML Microservice (FastAPI / Port 8000)             │
-│                                  │   ├── InsightFace, CLIP, YOLOv8, OCR pipelines      │
-│                                  │   └── Qdrant Vector Engine (Port 6333 / 6334)       │
-│                                  │                                                     │
-│                                  └── Dozzle Visual Log Viewer (Port 8888)              │
-│                                      Two-tier observability & real-time streaming      │
+│  Browser / Client ──HTTPS:443▶ chege-photos-caddy (Caddy 2 Alpine + tls internal)      │
+│                                  │  php_fastcgi :9000 (flush_interval -1)              │
+│                                  ▼                                                     │
+│                                chege-photos-web (PHP 8.4.28 FPM + OPcache JIT)         │
+│                                  ├── chege-photos-minio (Port 9000 S3 / 9001 Console)  │
+│                                  │   Primary Store: chege-photos | chege-models | bak  │
+│                                  ├── chege-photos-mysql (MySQL 8.4 / Port 3306)        │
+│                                  │   Users, albums, EXIF, captions, video transcripts  │
+│                                  ├── chege-photos-redis (Redis 7 / Port 6379)          │
+│                                  │   Sessions, cache & durable ML scan queue           │
+│                                  ├── chege-photos-ml (FastAPI + ffmpeg / Port 8000)    │
+│                                  │   ├── SigLIP 768-d, Florence-2, Whisper Turbo       │
+│                                  │   ├── InsightFace buffalo_l, YOLOv8n, OpenNSFW      │
+│                                  │   └── chege-photos-qdrant (Port 6333 / 6334)        │
+│                                  └── chege-photos-dozzle (Port 8888 Live Log Viewer)   │
 │                                                                                        │
-│  Android Client ────HTTP:80──▶ Web App Gateway (All ML features served via /api/v1)   │
+│  Android Client ────HTTP:80──▶ Nginx + WebApp Gateway (Strict /api/v1 isolation)       │
 └────────────────────────────────────────────────────────────────────────────────────────┘
     </div>
 </section>
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Production Container Cluster (7 Services)</h2>
-        <p>Every component runs containerized on an isolated Docker network with health checks, strict resource limits, and automated volume management.</p>
+        <h2>Production Container Cluster (9 Services)</h2>
+        <p>Stateless Web &amp; ML containers with zero host media volumes; all user media, AI model weights, and cold backups live in MinIO.</p>
     </div>
     <div class="table-responsive">
         <table class="table table-pub align-middle">
@@ -103,61 +101,68 @@
                     <th>Runtime / Base</th>
                     <th>Standard Port</th>
                     <th>Internal Network Alias</th>
-                    <th>Role & Responsibility</th>
+                    <th>Role &amp; Responsibility</th>
                 </tr>
             </thead>
             <tbody>
                 <tr>
+                    <td><strong>chege-photos-caddy</strong></td>
+                    <td><code>caddy:2-alpine</code></td>
+                    <td><code>80</code> / <code>443</code> (HTTP/3)</td>
+                    <td><code>caddy</code>, <code>chegephotos.local</code></td>
+                    <td>Reverse proxy with automatic local TLS (<code>https://chegephotos.local</code>), zero-buffer FastCGI streaming, <code>/logs*</code>, and <code>/ml/*</code>.</td>
+                </tr>
+                <tr>
                     <td><strong>chege-photos-web</strong></td>
-                    <td><code>php:8.4.27-apache-bookworm</code></td>
-                    <td><code>80</code></td>
-                    <td><code>web</code></td>
-                    <td>CodeIgniter 4 WebApp, Shield authentication, REST API gateway, EXIF extraction, and cron task scheduler.</td>
+                    <td><code>php:8.4.28-fpm-bookworm</code></td>
+                    <td>Internal <code>9000</code></td>
+                    <td><code>web</code>, <code>php-fpm</code></td>
+                    <td>Stateless CodeIgniter 4 NTS PHP-FPM workers with OPcache JIT (CVE-2026-126714 patched), Shield auth, and cron scheduler.</td>
                 </tr>
                 <tr>
                     <td><strong>chege-photos-ml</strong></td>
-                    <td><code>python:3.12-slim</code></td>
+                    <td><code>python:3.12-slim</code> + <code>ffmpeg</code></td>
                     <td><code>8000</code></td>
                     <td><code>ml</code>, <code>ml-chege-photos</code></td>
-                    <td>FastAPI neural engine running RetinaFace, ArcFace, HDBSCAN, OpenAI CLIP, YOLOv8, and Tesseract OCR.</td>
+                    <td>Stateless FastAPI multimodal AI engine running SigLIP 768-d, Florence-2, Whisper Large-v3-Turbo, InsightFace, YOLOv8n, and OpenNSFW.</td>
                 </tr>
                 <tr>
-                    <td><strong>chege-mysql</strong></td>
+                    <td><strong>chege-photos-mysql</strong></td>
                     <td><code>mysql:8.4</code></td>
                     <td><code>3306</code></td>
                     <td><code>mysql</code></td>
-                    <td>ACID relational database for users, albums, photos, tags, EXIF parameters, and operational audit logs.</td>
+                    <td>ACID relational database for users, albums, photos, AI captions, video transcripts, EXIF, and audit logs.</td>
                 </tr>
                 <tr>
-                    <td><strong>chege-minio</strong></td>
+                    <td><strong>chege-photos-minio</strong></td>
                     <td><code>cgr.dev/chainguard/minio</code></td>
                     <td><code>9000</code> / <code>9001</code></td>
                     <td><code>minio</code></td>
-                    <td>S3-compatible distributed object storage decoupling binary photo assets from application host containers.</td>
+                    <td>Primary S3 object storage hosting <code>chege-photos</code> (media), <code>chege-models</code> (AI weights), and <code>chege-backups</code>.</td>
                 </tr>
                 <tr>
-                    <td><strong>chege-minio-init</strong></td>
+                    <td><strong>chege-photos-minio-init</strong></td>
                     <td><code>minio-client:latest-dev</code></td>
                     <td>—</td>
                     <td><code>minio-init</code></td>
-                    <td>Bootstrap init container that provisions the <code>chege-photos</code> bucket and public thumbnail policy on boot.</td>
+                    <td>Bootstrap init container provisioning <code>chege-photos</code>, <code>chege-models</code>, and <code>chege-backups</code> buckets.</td>
                 </tr>
                 <tr>
-                    <td><strong>chege-redis</strong></td>
+                    <td><strong>chege-photos-redis</strong></td>
                     <td><code>redis:7-alpine</code></td>
                     <td><code>6379</code></td>
                     <td><code>redis</code></td>
-                    <td>In-memory session cache (with automated MySQL fallback) and durable asynchronous background scan queue.</td>
+                    <td>In-memory session cache (with MySQL fallback) and durable asynchronous ML background scan queue.</td>
                 </tr>
                 <tr>
-                    <td><strong>chege-qdrant</strong></td>
-                    <td><code>qdrant/qdrant:v1.13.2</code></td>
+                    <td><strong>chege-photos-qdrant</strong></td>
+                    <td><code>qdrant/qdrant:latest</code></td>
                     <td><code>6333</code> / <code>6334</code></td>
                     <td><code>qdrant</code></td>
-                    <td>HNSW high-dimensional vector search engine indexing 512-d ArcFace and CLIP embeddings with sub-15ms latency.</td>
+                    <td>HNSW vector search engine indexing 768-d SigLIP image/transcript vectors and 512-d ArcFace embeddings.</td>
                 </tr>
                 <tr>
-                    <td><strong>chege-dozzle</strong></td>
+                    <td><strong>chege-photos-dozzle</strong></td>
                     <td><code>amir20/dozzle:latest</code></td>
                     <td><code>8888</code></td>
                     <td><code>dozzle</code></td>

@@ -307,48 +307,72 @@ log "MINIO_CONSOLE_PORT        -> ${MINIO_CONSOLE_PORT} (MinIO Web Console)"
 log "DOZZLE_PORT               -> ${DOZZLE_PORT} (Real-Time Container Log Viewer)"
 log "S3_BUCKET                 -> ${S3_BUCKET} (Default Storage Bucket)"
 
-# ── 5. Stop Old Containers & Clear Conflicts ──────────────────
-section "5. Stopping Old Containers & Clearing Name Conflicts"
-docker compose down --remove-orphans 2>&1 | tail -3 || true
+# ── 5. Hardware GPU Auto-Detection & Compose Helper ───────────
+section "5. Hardware Acceleration Probe (CPU Default / Auto GPU)"
+COMPOSE_FILES=(-f docker-compose.yml)
+WHISPER_DEVICE="cpu"
+WHISPER_COMPUTE_TYPE="int8"
+ML_DEVICE="cpu"
+TORCH_INDEX_URL="https://download.pytorch.org/whl/cpu"
 
-# Explicitly remove legacy or conflicting container instances
-docker rm -f chege-mysql chege-redis chege-qdrant chege-minio chege-minio-init chege-dozzle chege-photos-web chege-photos-ml 2>/dev/null || true
+if command -v nvidia-smi >/dev/null 2>&1 && nvidia-smi >/dev/null 2>&1; then
+    if docker info 2>/dev/null | grep -qi "nvidia"; then
+        WHISPER_DEVICE="cuda"
+        WHISPER_COMPUTE_TYPE="float16"
+        ML_DEVICE="cuda"
+        TORCH_INDEX_URL="https://download.pytorch.org/whl/cu124"
+        if [ -f "docker-compose.gpu.yml" ]; then
+            COMPOSE_FILES+=(-f docker-compose.gpu.yml)
+        fi
+        log "NVIDIA GPU + Docker NVIDIA runtime detected -> Whisper Large-v3-Turbo & ML set to GPU (cuda / float16 / cu124)"
+    else
+        warn "NVIDIA GPU detected via nvidia-smi, but Docker NVIDIA Container Toolkit is not configured. Using CPU (int8)."
+    fi
+else
+    log "No NVIDIA GPU detected -> Whisper Large-v3-Turbo & ML configured for CPU (int8)"
+fi
+export WHISPER_DEVICE WHISPER_COMPUTE_TYPE ML_DEVICE TORCH_INDEX_URL
+
+dc() {
+    docker compose "${COMPOSE_FILES[@]}" "$@"
+}
+
+# ── 5b. Stop Old Containers & Clear Conflicts ─────────────────
+section "5b. Stopping Old Containers & Clearing Name Conflicts"
+dc down --remove-orphans 2>&1 | tail -3 || true
+
+# Remove both legacy (chege-*) and unified (chege-photos-*) container instances
+docker rm -f \
+    chege-mysql chege-redis chege-qdrant chege-minio chege-minio-init chege-dozzle \
+    chege-photos-mysql chege-photos-redis chege-photos-qdrant chege-photos-minio \
+    chege-photos-minio-init chege-photos-dozzle chege-photos-web chege-photos-nginx chege-photos-caddy chege-photos-ml \
+    2>/dev/null || true
 log "Old containers stopped and explicit name conflicts cleared"
 
-# ── 6. Build & Start Containers ───────────────────────────────
-section "6. Building & Starting All Containers"
+# ── 6. Build Images & Start Core Stateful Services ────────────
+section "6. Building Images & Starting Core Services (Race-Free Order)"
 if [ "${1:-}" = "--fast" ] || [ "${1:-}" = "--no-build" ]; then
     log "Fast startup mode active (skipping image rebuild)..."
-    docker compose up -d
 else
-    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant, MinIO, Dozzle)..."
-    docker compose pull mysql redis qdrant minio minio-init dozzle 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
+    log "Pulling base images (MySQL 8.4, Redis 7, Qdrant, MinIO, Caddy 2, Dozzle)..."
+    dc pull mysql redis qdrant minio minio-init caddy dozzle 2>&1 | grep -E "Pulling|Pulled|Digest|Status|already exists" || true
 
-    log "Building Web application container (PHP 8.4.27 + Apache)..."
-    docker compose --progress=plain build web
+    log "Building Web PHP-FPM container (PHP 8.4.28 NTS + OPcache JIT, patched for CVE-2026-126714)..."
+    dc build --pull --progress=plain web
 
-    log "Building ML microservice container (FastAPI + Vision models)..."
-    docker compose --progress=plain build ml
-
-    log "Starting multi-container stack in background..."
-    docker compose up -d
+    log "Building ML microservice container (FastAPI + ffmpeg + PyTorch ${ML_DEVICE})..."
+    dc build --pull --progress=plain --build-arg TORCH_INDEX_URL="${TORCH_INDEX_URL}" ml
 fi
-log "Containers created and started (mysql, redis, qdrant, minio, web, ml)"
 
-echo ""
-echo -e "   ${BOLD}Docker Image Sizes:${RESET}"
-docker images --filter "reference=*chege*" --filter "reference=*mysql*" --filter "reference=*redis*" --filter "reference=*qdrant*" --filter "reference=*minio*" --filter "reference=*dozzle*" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
-
-echo ""
-echo -e "   ${BOLD}Container Runtime Layer Sizes:${RESET}"
-docker ps --size --filter "name=chege" --format "table {{.Names}}\t{{.Status}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
+log "Starting core stateful services first (mysql, redis, qdrant, minio, minio-init, dozzle)..."
+dc up -d mysql redis qdrant minio minio-init dozzle
 
 # ── 7a. Wait for MySQL Health ─────────────────────────────────
 section "7a. Waiting for MySQL to Become Healthy"
 printf "   Waiting for MySQL"
 MYSQL_HEALTHY=false
 for i in $(seq 1 35); do
-    STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-mysql 2>/dev/null || echo "missing")
+    STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-photos-mysql 2>/dev/null || echo "missing")
     if [ "$STATUS" = "healthy" ]; then
         echo ""
         log "MySQL 8.4 is healthy and accepting connections"
@@ -365,7 +389,7 @@ section "7b. Waiting for Redis Health (:6379)"
 printf "   Checking Redis status"
 REDIS_HEALTHY=false
 for i in $(seq 1 15); do
-    R_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-redis 2>/dev/null || echo "missing")
+    R_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-photos-redis 2>/dev/null || echo "missing")
     if [ "$R_STATUS" = "healthy" ]; then
         echo ""
         log "Redis in-memory cache and queue broker is healthy"
@@ -382,7 +406,7 @@ section "7c. Waiting for Qdrant Vector Engine Health"
 printf "   Checking Qdrant status"
 QDRANT_HEALTHY=false
 for i in $(seq 1 20); do
-    Q_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-qdrant 2>/dev/null || echo "missing")
+    Q_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-photos-qdrant 2>/dev/null || echo "missing")
     if [ "$Q_STATUS" = "healthy" ] || curl -s "http://localhost:${QDRANT_HTTP_PORT}/readyz" | grep -q "ready" 2>/dev/null; then
         echo ""
         log "Qdrant vector database is ready and responsive"
@@ -394,44 +418,12 @@ for i in $(seq 1 20); do
 done
 $QDRANT_HEALTHY || { echo ""; warn "Qdrant took longer to initialize. Check: docker compose logs qdrant"; }
 
-# ── 7d. Verify Cron Daemon in Web Container ───────────────────
-section "7d. Verifying Cron Daemon in Web Container"
-printf "   Checking cron service in web container"
-CRON_RUNNING=false
-for i in $(seq 1 10); do
-    if docker compose exec -T web pgrep cron >/dev/null 2>&1; then
-        echo ""
-        log "Cron daemon is actively running inside the web container"
-        CRON_RUNNING=true
-        break
-    fi
-    printf "."
-    sleep 2
-done
-if ! $CRON_RUNNING; then
-    echo ""
-    warn "Cron daemon is not running inside web container. Starting service..."
-    docker compose exec -T web service cron start 2>&1 || true
-    if docker compose exec -T web pgrep cron >/dev/null 2>&1; then
-        log "Cron service started successfully"
-        CRON_RUNNING=true
-    else
-        warn "Could not start cron daemon inside web container. Check: docker compose logs web"
-    fi
-fi
-
-# Ensure cron log and environment files have proper permissions
-docker compose exec -T web sh -c "
-    touch /var/log/cron-run.log 2>/dev/null || true
-    chmod 666 /var/log/cron-run.log 2>/dev/null || true
-" 2>&1 && log "Cron log file verified (/var/log/cron-run.log)" || true
-
-# ── 7e. Wait for MinIO & Bucket Initialization ────────────────
-section "7e. Waiting for MinIO Object Storage & Bucket Initialization"
+# ── 7d. Wait for MinIO, Initialize Buckets & Seed Models ──────
+section "7d. Waiting for MinIO Object Storage & Seeding AI Models"
 printf "   Checking MinIO service"
 MINIO_HEALTHY=false
 for i in $(seq 1 25); do
-    M_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-minio 2>/dev/null || echo "missing")
+    M_STATUS=$(docker inspect --format='{{.State.Health.Status}}' chege-photos-minio 2>/dev/null || echo "missing")
     M_HTTP=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${MINIO_PORT}/minio/health/live" 2>/dev/null || echo "000")
     if [ "$M_STATUS" = "healthy" ] || [ "$M_HTTP" = "200" ]; then
         echo ""
@@ -444,13 +436,13 @@ for i in $(seq 1 25); do
 done
 $MINIO_HEALTHY || { echo ""; warn "MinIO took longer to initialize. Check: docker compose logs minio"; }
 
-printf "   Verifying default bucket (${S3_BUCKET}) initialization"
+printf "   Verifying buckets (${S3_BUCKET}, chege-models, chege-backups) initialization"
 BUCKET_READY=false
 for i in $(seq 1 15); do
-    INIT_STATE=$(docker inspect --format='{{.State.Status}}' chege-minio-init 2>/dev/null || echo "missing")
-    if [ "$INIT_STATE" = "exited" ] || [ "$INIT_STATE" = "running" ]; then
+    INIT_STATE=$(docker inspect --format='{{.State.Status}}' chege-photos-minio-init 2>/dev/null || echo "missing")
+    if [ "$INIT_STATE" = "exited" ]; then
         echo ""
-        log "MinIO default bucket (${S3_BUCKET}) auto-initialization completed"
+        log "MinIO buckets (photos, models, backups) auto-initialization completed"
         BUCKET_READY=true
         break
     fi
@@ -459,19 +451,73 @@ for i in $(seq 1 15); do
 done
 $BUCKET_READY || { echo ""; warn "MinIO bucket init check timed out. Verify: docker compose logs minio-init"; }
 
+if $MINIO_HEALTHY; then
+    log "Seeding AI models directly into minio://chege-models/ BEFORE starting ML worker..."
+    dc run --rm --no-deps ml python scripts/download_all_models.py 2>&1 || warn "Model sync to MinIO had warnings; ML will pull models lazily on demand."
+fi
+
+# ── 7e. Start Stateless Compute Services (web, caddy, ml) ─────
+section "7e. Starting Stateless Compute Containers (web PHP-FPM, caddy, ml)"
+dc up -d web caddy ml
+log "Stateless compute containers started (chege-photos-web, chege-photos-caddy, chege-photos-ml)"
+
+echo ""
+echo -e "   ${BOLD}Docker Image Sizes:${RESET}"
+docker images --filter "reference=*chege-photos*" --filter "reference=*mysql*" --filter "reference=*redis*" --filter "reference=*qdrant*" --filter "reference=*minio*" --filter "reference=*caddy*" --filter "reference=*dozzle*" --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
+
+echo ""
+echo -e "   ${BOLD}Container Runtime Layer Sizes:${RESET}"
+docker ps --size --filter "name=chege-photos" --format "table {{.Names}}\t{{.Status}}\t{{.Size}}" 2>/dev/null | sed 's/^/   /' || true
+
+# ── 7f. Verify Cron Daemon in Web Container ───────────────────
+section "7f. Verifying Cron Daemon & PHP 8.4.28 Security Posture"
+printf "   Checking cron service in web container"
+CRON_RUNNING=false
+for i in $(seq 1 10); do
+    if dc exec -T web pgrep cron >/dev/null 2>&1; then
+        echo ""
+        log "Cron daemon is actively running inside chege-photos-web"
+        CRON_RUNNING=true
+        break
+    fi
+    printf "."
+    sleep 2
+done
+if ! $CRON_RUNNING; then
+    echo ""
+    warn "Cron daemon is not running inside web container. Starting service..."
+    dc exec -T web service cron start 2>&1 || true
+    if dc exec -T web pgrep cron >/dev/null 2>&1; then
+        log "Cron service started successfully"
+        CRON_RUNNING=true
+    else
+        warn "Could not start cron daemon inside web container. Check: docker compose logs web"
+    fi
+fi
+
+dc exec -T web sh -c "
+    touch /var/log/cron-run.log 2>/dev/null || true
+    chmod 666 /var/log/cron-run.log 2>/dev/null || true
+" 2>&1 && log "Cron log file verified (/var/log/cron-run.log)" || true
+
+PHP_VER=$(dc exec -T web php -r 'echo PHP_VERSION;' 2>/dev/null || echo "unknown")
+UPLOAD_PROG=$(dc exec -T web php -r 'echo ini_get("session.upload_progress.enabled") ? "On" : "Off";' 2>/dev/null || echo "unknown")
+log "Verified PHP runtime: PHP ${PHP_VER} (session.upload_progress.enabled=${UPLOAD_PROG})"
+dc exec -T caddy caddy validate --config /etc/caddy/Caddyfile >/dev/null 2>&1 && log "Caddy 2 Caddyfile syntax verified (https://chegephotos.local ready)" || warn "Caddyfile validation reported warnings"
+
 # ── 8. Run Database Migrations & Seeding ──────────────────────
 section "8. Running Database Migrations & Seeding"
 if $MYSQL_HEALTHY; then
-    docker compose exec -T web php spark migrate --all 2>&1 \
+    dc exec -T web php spark migrate --all 2>&1 \
         && log "Database migrations executed successfully" \
         || warn "Migrations had notices or completed with warnings"
 
     log "Applying initial database seeders..."
-    docker compose exec -T web php spark db:seed SystemDefaultSeeder 2>&1 || true
+    dc exec -T web php spark db:seed SystemDefaultSeeder 2>&1 || true
     log "Seeders executed successfully"
 
     # Ensure session table exists if not already created
-    docker compose exec -T web php -r '
+    dc exec -T web php -r '
 $h = getenv("DB_HOST") ?: "mysql";
 $pt = getenv("DB_PORT") ?: "3306";
 $u = getenv("DB_USER") ?: "root";
@@ -501,7 +547,7 @@ for i in $(seq 1 45); do
     ML_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:${ML_PORT}/health 2>/dev/null || echo "000")
     if [ "$ML_CODE" = "200" ]; then
         echo ""
-        log "ML vision & embedding microservice is healthy (HTTP $ML_CODE)"
+        log "ML vision & embedding microservice is healthy (HTTP $ML_CODE | device=${ML_DEVICE} | whisper=${WHISPER_DEVICE}/${WHISPER_COMPUTE_TYPE})"
         ML_READY=true
         break
     fi
@@ -509,40 +555,41 @@ for i in $(seq 1 45); do
     sleep 2
 done
 $ML_READY || { echo ""; warn "ML microservice took longer to initialize. Check: docker compose logs ml"; }
+dc exec -T ml ffmpeg -version >/dev/null 2>&1 && log "Verified ffmpeg inside chege-photos-ml (Whisper audio extraction ready)" || warn "ffmpeg check inside ml failed"
 
-# ── 10. Wait for Web Server Readiness (:80) ───────────────────
-section "10. Waiting for WebApp Server Ready (:${WEB_PORT})"
+# ── 10. Wait for Nginx + WebApp Readiness (:80) ───────────────
+section "10. Waiting for Nginx + WebApp Server Ready (:${WEB_PORT})"
 printf "   Waiting for WebApp"
 WEB_READY=false
 for i in $(seq 1 35); do
     CODE=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${WEB_PORT}/" 2>/dev/null || echo "000")
     if [[ "$CODE" =~ ^(200|301|302|307|403)$ ]]; then
         echo ""
-        log "WebApp server is responding (HTTP $CODE)"
+        log "Nginx + PHP 8.4.28 FPM WebApp is responding (HTTP $CODE)"
         WEB_READY=true
         break
     fi
     printf "."
     sleep 2
 done
-$WEB_READY || { echo ""; warn "Web server did not respond in time. Check: docker compose logs web"; }
+$WEB_READY || { echo ""; warn "Web server did not respond in time. Check: docker compose logs nginx web"; }
 
 # ── 11. Container Permissions Enforcement ─────────────────────
 section "11. Setting Container Writable Directory Permissions"
-docker compose exec -T web sh -c "
+dc exec -T web sh -c "
     mkdir -p writable/cache writable/logs writable/session writable/debugbar public/uploads public/thumbnails && \
     chown -R www-data:www-data writable && \
     chmod -R 775 writable && \
     chown www-data:www-data public/uploads public/thumbnails && \
     chmod 775 public/uploads public/thumbnails
-" 2>&1 && log "Writable and uploads permissions enforced (www-data:775)" || warn "Failed to update directory permissions"
+" 2>&1 && log "Writable directory permissions enforced (www-data:775)" || warn "Failed to update directory permissions"
 
 # ── 12. Housekeeping, Storage Metrics & Cache Clearing ────────
 section "12. Housekeeping & Cache Clearing"
-docker compose exec -T web php spark cache:clear 2>&1 || true
+dc exec -T web php spark cache:clear 2>&1 || true
 log "CodeIgniter 4 application cache cleared"
 
-docker compose exec -T web sh -c "
+dc exec -T web sh -c "
     rm -rf writable/debugbar/* 2>/dev/null || true
 " && log "Temporary runtime debugbar profiles cleared" || true
 
@@ -555,7 +602,7 @@ docker system df 2>/dev/null | sed 's/^/   /' || true
 
 # ── 13. Container Status & Final Summary ──────────────────────
 section "13. Deployment Summary & Health Verification"
-docker compose ps
+dc ps
 
 echo ""
 FINAL_WEB=$(curl -s -o /dev/null -w "%{http_code}" "http://localhost:${WEB_PORT}/" 2>/dev/null || echo "000")

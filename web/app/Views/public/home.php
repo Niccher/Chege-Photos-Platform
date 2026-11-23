@@ -25,16 +25,17 @@
         </a>
     </div>
     <div class="mt-4 d-flex gap-2 flex-wrap justify-content-center" style="font-size: 0.8rem; color: var(--text-muted);">
-        <span class="tech-badge"><i class="bi bi-filetype-php me-1"></i>PHP 8.4 / CI4</span>
+        <span class="tech-badge"><i class="bi bi-filetype-php me-1"></i>Caddy 2 + PHP 8.4.28 FPM</span>
         <span class="tech-badge"><i class="bi bi-database me-1"></i>MySQL 8.4</span>
         <span class="tech-badge"><i class="bi bi-lightning-charge me-1"></i>Python 3.12 / FastAPI</span>
         <span class="tech-badge"><i class="bi bi-person-bounding-box me-1"></i>InsightFace (ArcFace)</span>
-        <span class="tech-badge"><i class="bi bi-search me-1"></i>OpenAI CLIP</span>
-        <span class="tech-badge"><i class="bi bi-tag me-1"></i>YOLOv8</span>
-        <span class="tech-badge"><i class="bi bi-fonts me-1"></i>Tesseract OCR</span>
+        <span class="tech-badge"><i class="bi bi-search me-1"></i>Google SigLIP 768-d</span>
+        <span class="tech-badge"><i class="bi bi-chat-square-text me-1"></i>Florence-2</span>
+        <span class="tech-badge"><i class="bi bi-mic me-1"></i>Whisper Large-v3-Turbo</span>
+        <span class="tech-badge"><i class="bi bi-tag me-1"></i>YOLOv8n</span>
         <span class="tech-badge"><i class="bi bi-diagram-3 me-1"></i>Qdrant Vector DB</span>
         <span class="tech-badge"><i class="bi bi-hdd-network me-1"></i>Redis 7</span>
-        <span class="tech-badge"><i class="bi bi-cloud-arrow-up me-1"></i>MinIO S3 / Multi-Cloud</span>
+        <span class="tech-badge"><i class="bi bi-cloud-arrow-up me-1"></i>MinIO Primary S3</span>
         <span class="tech-badge"><i class="bi bi-journal-text me-1"></i>Two-Tier Observability</span>
         <span class="tech-badge"><i class="bi bi-phone me-1"></i>Kotlin / Compose</span>
         <span class="tech-badge"><i class="bi bi-box me-1"></i>Docker Compose</span>

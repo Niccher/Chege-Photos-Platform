@@ -121,10 +121,22 @@ def ensure_qdrant_collection():
             vectors_config=VectorParams(size=512, distance=Distance.COSINE),
         )
 
+    # Ensure photo_embeddings matches SigLIP 768-d vector size (clean cutover, no legacy 512-d CLIP)
+    target_photo_dim = int(getattr(settings, "siglip_vector_size", 768))
+    if settings.qdrant_photo_collection in existing:
+        try:
+            col_info = client.get_collection(settings.qdrant_photo_collection)
+            current_dim = getattr(col_info.config.params.vectors, "size", None)
+            if current_dim is not None and int(current_dim) != target_photo_dim:
+                client.delete_collection(settings.qdrant_photo_collection)
+                existing.discard(settings.qdrant_photo_collection)
+        except Exception:
+            pass
+
     if settings.qdrant_photo_collection not in existing:
         client.create_collection(
             collection_name=settings.qdrant_photo_collection,
-            vectors_config=VectorParams(size=512, distance=Distance.COSINE),
+            vectors_config=VectorParams(size=target_photo_dim, distance=Distance.COSINE),
         )
 
     centroids_col = settings.qdrant_collection + "_centroids"
@@ -134,8 +146,8 @@ def ensure_qdrant_collection():
                 collection_name=centroids_col,
                 vectors_config=VectorParams(size=512, distance=Distance.COSINE),
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.debug("Centroids collection creation skipped or already exists: %s", exc)
 
     # Ensure payload indexes for high-speed multi-tenant isolation and fast deletion
     for col in (settings.qdrant_collection, settings.qdrant_photo_collection):
@@ -146,8 +158,8 @@ def ensure_qdrant_collection():
                     field_name=field,
                     field_schema=PayloadSchemaType.INTEGER,
                 )
-            except Exception:
-                pass
+            except Exception as exc:
+                log.debug("Payload index %s on %s skipped or already exists: %s", field, col, exc)
 
     try:
         client.create_payload_index(
@@ -155,5 +167,5 @@ def ensure_qdrant_collection():
             field_name="user_id",
             field_schema=PayloadSchemaType.INTEGER,
         )
-    except Exception:
-        pass
+    except Exception as exc:
+        log.debug("Payload index user_id on centroids skipped or already exists: %s", exc)

@@ -1,94 +1,44 @@
-# Machine Learning Models & Pipelines — ML Chege Photos
+# AI & Machine Learning Microservice (`chege-photos-ml`)
 
-This document describes the computer vision neural networks, inference engines, vector dimensions, and clustering algorithms implemented in ML Chege Photos.
-
----
-
-## 1. Model Catalog
-
-| Model | Framework / Checkpoint | Output Dimension | Purpose |
-|---|---|---|---|
-| **InsightFace** | `buffalo_l` (RetinaFace + ArcFace) | **512 float32** | Face detection, bounding boxes, landmarks, and identity recognition vectors. |
-| **YOLOv8** | Ultralytics YOLOv8n / YOLOv8s | Detection BBoxes + Classes | Object, scene, and tag detection in photos. |
-| **CLIP** | `openai/clip-vit-base-patch32` | **512 float32** | Multi-modal text and image embeddings for natural language search. |
-| **GenderAge** | ONNX Runtime (`genderage.onnx`) | Age (int), Gender (M/F) | Demographic attribute estimation. |
+The ML microservice (`ml/`) runs Python 3.12 + FastAPI + `ffmpeg`, pulling all model weights on demand from **`minio://chege-models/`** into ephemeral `/tmp/chege_models` and processing media from **`minio://chege-photos/`** via ephemeral `/tmp/chege_ml_media`.
 
 ---
 
-## 2. Facial Recognition Pipeline (InsightFace ArcFace)
-
-1. **Detection & Alignment**:
-   * RetinaFace identifies face boundaries with a confidence threshold $\ge 0.50$.
-   * 5 facial landmarks (eyes, nose tip, mouth corners) align the face into a standardized affine crop.
-2. **ArcFace Embedding**:
-   * Generates a **512-dimensional unit-normalized embedding** ($\|v\|_2 = 1.0$).
-   * Invariant to minor lighting, pose, and expression variations.
-3. **Indexing**:
-   * Vectors are inserted into Qdrant's `face_embeddings` collection using an HNSW cosine index.
-
----
-
-## 3. Face Clustering & Centroid Management
-
-Groupings of similar faces are discovered using a two-tier clustering architecture:
+## Multimodal Pipeline Diagram
 
 ```mermaid
-graph TD
-    NewFace["New Detected Face<br/>(512-d ArcFace vector)"]
-    CentroidCheck{"Cosine Similarity<br/>>= 0.80 to Centroid?"}
-    DirectAssign["Assign to Existing Person<br/>(Update Centroid Running Mean)"]
-    UnassignedPool["Add to Unassigned Faces Pool"]
-    ThresholdCheck{"Unassigned Faces<br/>>= 50 Faces?"}
-    HDBSCAN["Run HDBSCAN Sweep<br/>(min_cluster_size=2, cosine)"]
-    NewCentroids["Generate New Identity Centroids<br/>Upsert into Qdrant centroids"]
+flowchart LR
+    Queue["Redis List\nchege:ml:scan:queue"] --> Worker["FastAPI Async Worker Pool\n(BLPOP + ThreadPool)"]
+    Worker --> Fetch["SigV4 Fetch from MinIO\n-> /tmp/chege_ml_media"]
+    Fetch --> Split{"Media Type"}
 
-    NewFace --> CentroidCheck
-    CentroidCheck -- Yes --> DirectAssign
-    CentroidCheck -- No --> UnassignedPool
-    UnassignedPool --> ThresholdCheck
-    ThresholdCheck -- Yes --> HDBSCAN
-    HDBSCAN --> NewCentroids
-    ThresholdCheck -- No --> Wait["Await Next Batch"]
+    Split -- Photo --> Faces["InsightFace buffalo_l\n(512-d ArcFace -> Qdrant)"]
+    Split -- Photo --> YOLO["YOLOv8n ONNX\n(80 COCO Object Tags -> MySQL)"]
+    Split -- Photo --> SigLIP["google/siglip-base-patch16-224\n(768-d Vectors -> Qdrant)"]
+    Split -- Photo --> Florence["Microsoft Florence-2-base\n(<MORE_DETAILED_CAPTION> + <OCR> -> MySQL)"]
+    Split -- Photo --> NSFW["OpenNSFW ONNX\n(Moderation / Auto-Vault -> MySQL)"]
+
+    Split -- Video --> Whisper["Whisper Large-v3-Turbo\n(ffmpeg + faster-whisper -> MySQL + Qdrant)"]
+
+    Faces & YOLO & SigLIP & Florence & NSFW & Whisper --> Cleanup["unlink(/tmp/chege_ml_media/*)"]
 ```
 
-### Centroid Calculation
-When a cluster receives a new face or runs an HDBSCAN pass, its centroid $C$ is computed as the normalized mean vector of all member face embeddings $v_i$:
+---
 
-$$C = \frac{\sum_{i=1}^{N} v_i}{\left\|\sum_{i=1}^{N} v_i\right\|_2}$$
+## Active Model Inventory
 
-Using normalized centroids allows rapid $O(\log N)$ search in Qdrant rather than checking every individual face in the dataset.
+| Capability | Model | Vector / Output | MinIO Key (`chege-models`) | Runtime |
+| :--- | :--- | :--- | :--- | :--- |
+| **Face Detection & Recognition** | InsightFace `buffalo_l` (`det_10g.onnx`, `w600k_r50.onnx`) | 512-d ArcFace embeddings | `insightface/buffalo_l/` | ONNX Runtime (CUDA / CPU) |
+| **Semantic Visual Search** | `google/siglip-base-patch16-224` | 768-d normalized vectors (`padding="max_length"`) | `siglip/google--siglip-base-patch16-224/` | PyTorch (`ML_DEVICE`) |
+| **Dense Captioning & OCR** | `microsoft/Florence-2-base` | `ai_caption` + `ocr_text` | `florence2/microsoft--Florence-2-base/` | PyTorch (`attn_implementation="eager"`) |
+| **Video Speech Transcription** | `Whisper Large-v3-Turbo` (CTranslate2) | `audio_transcript` + `transcript_segments` JSON + Qdrant vector | `whisper/large-v3-turbo/` | `faster-whisper` (CPU `int8` default / CUDA `float16` auto) |
+| **Object Tagging** | YOLOv8 Nano (`yolov8n.onnx`) | `tbl_photo_tags` | `yolo/yolov8n.onnx` | OpenCV DNN |
+| **Safety Moderation** | OpenNSFW ResNet-50 (`open_nsfw.onnx`) | `nsfw_score`, `is_nsfw`, auto-vault | `nsfw/open_nsfw.onnx` | OpenCV DNN / ONNX |
 
 ---
 
-## 4. Semantic Search (OpenAI CLIP)
+## Hardware Acceleration Auto-Detection
 
-* **Model**: `openai/clip-vit-base-patch32`
-* **Image Encoder**: Converts input photos into a 512-dimensional vector.
-* **Text Encoder**: Converts user search queries (e.g. `"birthday party with cake"`) into a 512-dimensional vector in the same shared embedding space.
-* **Search Execution**: Queries Qdrant's `photo_embeddings` collection for photos with the highest cosine similarity to the encoded query text.
-
----
-
-## 5. Object Detection (YOLOv8)
-
-* Analyzes full-resolution images to extract tags (e.g. `dog`, `car`, `laptop`, `beach`, `mountain`).
-* Labels with confidence $\ge 0.50$ are recorded in MySQL `object_detections` and attached as metadata to Qdrant photo payloads to facilitate combined visual and keyword filtering.
-
----
-
-## 6. Model Weight Provisioning & Lifecycle
-
-Neural network weights are provisioned automatically without committing heavy binary blobs to version control:
-
-1. **Build-Time Pre-Download**: During container image creation, `ml/Dockerfile` executes [`scripts/download_all_models.py`](../../ml/scripts/download_all_models.py). This streams model weights (RetinaFace, ArcFace, YOLOv8n ONNX, OpenNSFW ONNX, and CLIP transformer checkpoints) directly into `/app/models`.
-2. **Runtime Lazy-Load Fallback**: If a model checkpoint is absent or an initial build was interrupted, [`app/ml/loader.py`](../../ml/app/ml/loader.py) dynamically fetches missing checkpoints on first request invocation.
-3. **Persistent Volume Mounting**: In production, the `insightface_models` Docker volume persists downloaded weights across container lifecycles to avoid repeated fetches.
-
----
-
-## Related Documentation
-
-* [Architecture Overview](../architecture/overview.md)
-* [Data & Storage Models](../architecture/data-and-storage.md)
-* [API Contract](../api/contract.md)
-* [FastAPI Implementation](fastapi.md)
+- **Default (CPU-only hosts):** `WHISPER_DEVICE=cpu`, `WHISPER_COMPUTE_TYPE=int8`, `ML_DEVICE=cpu`, `TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu`.
+- **Automatic GPU Promotion:** When `scripts/deploy.sh` detects `nvidia-smi` and Docker NVIDIA Container Toolkit, it automatically sets `WHISPER_DEVICE=cuda`, `WHISPER_COMPUTE_TYPE=float16`, `ML_DEVICE=cuda`, builds PyTorch from `https://download.pytorch.org/whl/cu124`, and attaches `docker-compose.gpu.yml`.

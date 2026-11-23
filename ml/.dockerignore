@@ -21,11 +21,15 @@ env/
 wheels/
 *.whl
 
-# Build & Models
+# Build & Models (Stored in minio://chege-models/, never baked into image)
 build/
 dist/
 models/
 *.onnx
+*.safetensors
+*.bin
+*.pt
+*.gguf
 *.tmp
 *.zip
 

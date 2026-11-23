@@ -1,205 +1,233 @@
 #!/usr/bin/env python3
 """
-Robust build-time model weight downloader for Docker builds.
-Pre-downloads InsightFace (buffalo_l), YOLOv8 Nano, CLIP, and OpenNSFW
-with clean progress logging, 1MB streaming chunks, and retry resilience.
+MinIO-Primary AI Model Seeder for Chege Photos Platform.
+Downloads all AI model artifacts into ephemeral /tmp staging and uploads them directly
+to minio://chege-models/ with zero permanent local volume storage:
+  - insightface/buffalo_l/ (det_10g.onnx, w600k_r50.onnx, etc.)
+  - yolo/yolov8n.onnx
+  - nsfw/open_nsfw.onnx
+  - siglip/google--siglip-base-patch16-224/
+  - florence2/microsoft--Florence-2-base/
+  - whisper/large-v3-turbo/ (CTranslate2)
 """
-import os
+from __future__ import annotations
+
 import gc
-import sys
-import time
-import zipfile
 import logging
+import os
+import shutil
+import sys
+import tempfile
+import time
 import urllib.request
+import zipfile
 from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-log = logging.getLogger("download_all_models")
-
-MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/app/models"))
-try:
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
-except Exception:
-    MODELS_DIR = Path(__file__).resolve().parent.parent / "models"
-    MODELS_DIR.mkdir(parents=True, exist_ok=True)
+log = logging.getLogger("sync_models_to_minio")
 
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
-def download_file_stream(url: str, dest: Path, description: str, max_retries: int = 3, force: bool = False) -> bool:
-    """Download file in 1MB chunks with User-Agent header, speed tracking, and retry logic."""
-    if not force and dest.exists() and dest.stat().st_size > 100000:
-        log.info("✓ %s already present (%d MB), skipping.", description, dest.stat().st_size // 1048576)
-        return True
+S3_ENDPOINT = os.getenv("S3_ENDPOINT", "http://minio:9000").rstrip("/")
+S3_MODELS_BUCKET = os.getenv("S3_MODELS_BUCKET", "chege-models")
+S3_ACCESS_KEY = os.getenv("S3_ACCESS_KEY") or os.getenv("MINIO_ROOT_USER") or "minio_admin"
+S3_SECRET_KEY = os.getenv("S3_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD") or "minio_password123"
+S3_REGION = os.getenv("S3_REGION", "us-east-1")
 
+
+def _get_s3():
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "s3",
+        endpoint_url=S3_ENDPOINT,
+        aws_access_key_id=S3_ACCESS_KEY,
+        aws_secret_access_key=S3_SECRET_KEY,
+        region_name=S3_REGION,
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+    )
+
+
+def ensure_bucket(s3) -> None:
+    try:
+        s3.head_bucket(Bucket=S3_MODELS_BUCKET)
+    except Exception:
+        s3.create_bucket(Bucket=S3_MODELS_BUCKET)
+        log.info("Created MinIO bucket: %s", S3_MODELS_BUCKET)
+
+
+def minio_has_key(s3, key: str) -> bool:
+    try:
+        resp = s3.head_object(Bucket=S3_MODELS_BUCKET, Key=key.lstrip("/"))
+        return int(resp.get("ContentLength", 0)) > 0
+    except Exception:
+        return False
+
+
+def minio_has_prefix(s3, prefix: str) -> bool:
+    try:
+        resp = s3.list_objects_v2(Bucket=S3_MODELS_BUCKET, Prefix=prefix.strip("/") + "/", MaxKeys=1)
+        return resp.get("KeyCount", 0) > 0
+    except Exception:
+        return False
+
+
+def upload_file(s3, local_path: Path, key: str) -> None:
+    clean_key = key.lstrip("/")
+    s3.upload_file(str(local_path), S3_MODELS_BUCKET, clean_key)
+    log.info("✓ Uploaded -> minio://%s/%s (%d MB)", S3_MODELS_BUCKET, clean_key, local_path.stat().st_size // 1048576)
+
+
+def upload_dir(s3, local_dir: Path, prefix: str) -> None:
+    clean_prefix = prefix.strip("/")
+    count = 0
+    for f in local_dir.rglob("*"):
+        if f.is_file():
+            rel = f.relative_to(local_dir).as_posix()
+            key = f"{clean_prefix}/{rel}"
+            if not minio_has_key(s3, key):
+                s3.upload_file(str(f), S3_MODELS_BUCKET, key)
+                count += 1
+    log.info("✓ Synced directory -> minio://%s/%s/ (%d files uploaded)", S3_MODELS_BUCKET, clean_prefix, count)
+
+
+def download_file_stream(url: str, dest: Path, description: str, max_retries: int = 3) -> bool:
     dest.parent.mkdir(parents=True, exist_ok=True)
     temp_dest = dest.with_suffix(".tmp")
-
     for attempt in range(1, max_retries + 1):
         try:
-            log.info("Downloading %s (Attempt %d/%d) from %s ...", description, attempt, max_retries, url)
-            start_time = time.time()
+            log.info("Downloading %s (Attempt %d/%d) ...", description, attempt, max_retries)
             req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
-            with urllib.request.urlopen(req, timeout=120) as resp:
-                total_bytes = int(resp.headers.get("Content-Length", 0))
-                downloaded = 0
-                last_logged_pct = 0
+            with urllib.request.urlopen(req, timeout=180) as resp:
                 with open(temp_dest, "wb") as f:
                     while True:
-                        chunk = resp.read(1024 * 1024)  # 1 MB chunk
+                        chunk = resp.read(1024 * 1024)
                         if not chunk:
                             break
                         f.write(chunk)
-                        downloaded += len(chunk)
-                        if total_bytes > 0:
-                            pct = int((downloaded / total_bytes) * 100)
-                            if pct >= last_logged_pct + 25:
-                                elapsed = max(0.1, time.time() - start_time)
-                                speed_mb = (downloaded / 1048576) / elapsed
-                                log.info("  -> %s progress: %d%% (%d / %d MB @ %.1f MB/s)", description, pct, downloaded // 1048576, total_bytes // 1048576, speed_mb)
-                                last_logged_pct = pct
-
             temp_dest.rename(dest)
-            elapsed_total = max(0.1, time.time() - start_time)
-            avg_speed = (dest.stat().st_size / 1048576) / elapsed_total
-            log.info("✓ %s downloaded successfully (%d MB @ %.1f MB/s in %.1fs).", description, dest.stat().st_size // 1048576, avg_speed, elapsed_total)
             return True
         except Exception as exc:
-            log.warning("✗ Download attempt %d failed for %s: %s", attempt, description, exc)
-            if temp_dest.exists():
-                temp_dest.unlink(missing_ok=True)
+            log.warning("Attempt %d failed for %s: %s", attempt, description, exc)
+            temp_dest.unlink(missing_ok=True)
             if attempt < max_retries:
                 time.sleep(3)
-
-    log.error("Failed to download %s after %d attempts.", description, max_retries)
     return False
 
-def download_insightface():
-    log.info("── 1/4: InsightFace model pack (buffalo_l) ──")
-    target_dir = MODELS_DIR / "insightface_models" / "models" / "buffalo_l"
-    det_onnx = target_dir / "det_10g.onnx"
-    if det_onnx.exists() and det_onnx.stat().st_size > 1000000:
-        log.info("✓ InsightFace buffalo_l models already extracted at %s", target_dir)
+
+def sync_insightface(s3, stage: Path) -> None:
+    log.info("── 1/6: InsightFace buffalo_l -> minio://%s/insightface/buffalo_l/ ──", S3_MODELS_BUCKET)
+    if minio_has_key(s3, "insightface/buffalo_l/det_10g.onnx") and minio_has_key(s3, "insightface/buffalo_l/w600k_r50.onnx"):
+        log.info("✓ InsightFace buffalo_l already stored in MinIO, skipping.")
         return
 
-    zip_path = MODELS_DIR / "insightface_models" / "models" / "buffalo_l.zip"
+    zip_path = stage / "buffalo_l.zip"
+    extract_dir = stage / "buffalo_l"
     url = "https://github.com/deepinsight/insightface/releases/download/v0.7/buffalo_l.zip"
+    if download_file_stream(url, zip_path, "InsightFace buffalo_l.zip"):
+        extract_dir.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(zip_path, "r") as z:
+            z.extractall(extract_dir)
+        upload_dir(s3, extract_dir, "insightface/buffalo_l")
+        shutil.rmtree(extract_dir, ignore_errors=True)
+        zip_path.unlink(missing_ok=True)
 
-    success = download_file_stream(url, zip_path, "InsightFace buffalo_l.zip")
-    if success and zip_path.exists():
-        try:
-            log.info("Extracting %s into %s ...", zip_path, target_dir)
-            target_dir.mkdir(parents=True, exist_ok=True)
-            with zipfile.ZipFile(zip_path, "r") as z:
-                z.extractall(target_dir)
-            zip_path.unlink(missing_ok=True)
-            log.info("✓ InsightFace buffalo_l models extracted successfully.")
-        except Exception as exc:
-            log.error("Failed to extract InsightFace zip: %s", exc)
 
-def download_yolov8():
-    log.info("── 2/4: YOLOv8 Nano object detection model ──")
-    yolo_url = "https://huggingface.co/Kalray/yolov8/resolve/main/yolov8n.onnx"
-    yolo_dest = MODELS_DIR / "yolov8n.onnx"
-    download_file_stream(yolo_url, yolo_dest, "YOLOv8 Nano ONNX")
-
-def download_opennsfw():
-    log.info("── 3/4: OpenNSFW ResNet-50 ONNX model ──")
-    nsfw_dest = MODELS_DIR / "open_nsfw.onnx"
-    if nsfw_dest.exists() and nsfw_dest.stat().st_size > 1000000:
-        log.info("✓ OpenNSFW model already exists at %s", nsfw_dest)
+def sync_yolov8(s3, stage: Path) -> None:
+    log.info("── 2/6: YOLOv8 Nano -> minio://%s/yolo/yolov8n.onnx ──", S3_MODELS_BUCKET)
+    if minio_has_key(s3, "yolo/yolov8n.onnx"):
+        log.info("✓ YOLOv8n already stored in MinIO, skipping.")
         return
+    dest = stage / "yolov8n.onnx"
+    if download_file_stream("https://huggingface.co/Kalray/yolov8/resolve/main/yolov8n.onnx", dest, "YOLOv8n ONNX"):
+        upload_file(s3, dest, "yolo/yolov8n.onnx")
+        dest.unlink(missing_ok=True)
 
-    # Attempt copy from opennsfw2 package first
-    try:
-        import opennsfw2 as _pkg
-        pkg_dir = Path(_pkg.__file__).parent
-        data_dir = pkg_dir / "data"
-        if data_dir.exists():
-            for f in data_dir.glob("*.onnx"):
-                if f.is_file() and f.stat().st_size > 1000000:
-                    import shutil
-                    shutil.copy2(f, nsfw_dest)
-                    log.info("✓ Copied opennsfw2 ONNX model from package data: %s -> %s", f, nsfw_dest)
-                    return
-    except Exception as e:
-        log.debug("Package copy skipped: %s", e)
 
-    nsfw_urls = [
+def sync_opennsfw(s3, stage: Path) -> None:
+    log.info("── 3/6: OpenNSFW -> minio://%s/nsfw/open_nsfw.onnx ──", S3_MODELS_BUCKET)
+    if minio_has_key(s3, "nsfw/open_nsfw.onnx"):
+        log.info("✓ OpenNSFW already stored in MinIO, skipping.")
+        return
+    dest = stage / "open_nsfw.onnx"
+    urls = [
         "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/open_nsfw.onnx",
         "https://huggingface.co/ninjawick/webui-faceswap-unlocked/resolve/main/open_nsfw.onnx",
     ]
-    for url in nsfw_urls:
-        if download_file_stream(url, nsfw_dest, "OpenNSFW ONNX"):
+    for url in urls:
+        if download_file_stream(url, dest, "OpenNSFW ONNX"):
+            upload_file(s3, dest, "nsfw/open_nsfw.onnx")
+            dest.unlink(missing_ok=True)
             return
-    log.error("Failed to download OpenNSFW ONNX from all available sources.")
 
-def download_clip():
-    log.info("── 4/4: CLIP Transformer (openai/clip-vit-base-patch32) ──")
+
+def sync_hf_repo(s3, stage: Path, repo_id: str, minio_prefix: str, label: str) -> None:
+    log.info("── %s -> minio://%s/%s/ ──", label, S3_MODELS_BUCKET, minio_prefix)
+    if minio_has_prefix(s3, minio_prefix):
+        log.info("✓ %s already stored in MinIO, skipping.", label)
+        return
     try:
-        from transformers import CLIPModel, CLIPProcessor
-        clip_name = "openai/clip-vit-base-patch32"
-        CLIPProcessor.from_pretrained(clip_name)
-        CLIPModel.from_pretrained(clip_name)
-        log.info("✓ CLIP processor and model downloaded into Hugging Face cache.")
+        from huggingface_hub import snapshot_download
+
+        local_dir = stage / minio_prefix.replace("/", "_")
+        snapshot_download(
+            repo_id=repo_id,
+            local_dir=str(local_dir),
+            local_dir_use_symlinks=False,
+        )
+        upload_dir(s3, local_dir, minio_prefix)
+        shutil.rmtree(local_dir, ignore_errors=True)
     except Exception as exc:
-        log.warning("CLIP pre-download encountered non-fatal issue: %s. (Will download at runtime on first search)", exc)
+        log.warning("✗ Failed syncing %s (%s): %s", label, repo_id, exc)
 
-def verify_models() -> bool:
-    log.info("Verifying installed models in %s ...", MODELS_DIR)
-    det_onnx = MODELS_DIR / "insightface_models" / "models" / "buffalo_l" / "det_10g.onnx"
-    w600k_onnx = MODELS_DIR / "insightface_models" / "models" / "buffalo_l" / "w600k_r50.onnx"
-    yolo_dest = MODELS_DIR / "yolov8n.onnx"
-    nsfw_dest = MODELS_DIR / "open_nsfw.onnx"
 
-    status = {
-        "InsightFace Det (det_10g.onnx)": det_onnx.exists() and det_onnx.stat().st_size > 1000000,
-        "InsightFace Rec (w600k_r50.onnx)": w600k_onnx.exists() and w600k_onnx.stat().st_size > 10000000,
-        "YOLOv8 Nano (yolov8n.onnx)": yolo_dest.exists() and yolo_dest.stat().st_size > 1000000,
-        "OpenNSFW (open_nsfw.onnx)": nsfw_dest.exists() and nsfw_dest.stat().st_size > 1000000,
+def verify_minio_models(s3) -> bool:
+    checks = {
+        "InsightFace (det_10g.onnx)": minio_has_key(s3, "insightface/buffalo_l/det_10g.onnx"),
+        "InsightFace (w600k_r50.onnx)": minio_has_key(s3, "insightface/buffalo_l/w600k_r50.onnx"),
+        "YOLOv8n (yolov8n.onnx)": minio_has_key(s3, "yolo/yolov8n.onnx"),
+        "OpenNSFW (open_nsfw.onnx)": minio_has_key(s3, "nsfw/open_nsfw.onnx"),
+        "SigLIP (google/siglip-base-patch16-224)": minio_has_prefix(s3, "siglip/google--siglip-base-patch16-224"),
+        "Florence-2 (microsoft/Florence-2-base)": minio_has_prefix(s3, "florence2/microsoft--Florence-2-base"),
+        "Whisper Large-v3-Turbo (CTranslate2)": minio_has_prefix(s3, "whisper/large-v3-turbo"),
     }
     all_ok = True
-    for name, ok in status.items():
+    for name, ok in checks.items():
         if ok:
-            log.info("✓ %s: Present & Valid", name)
+            log.info("✓ %s: Present in minio://%s", name, S3_MODELS_BUCKET)
         else:
-            log.warning("✗ %s: Missing or Incomplete", name)
+            log.warning("✗ %s: Missing in minio://%s", name, S3_MODELS_BUCKET)
             all_ok = False
     return all_ok
 
-def main():
-    args = sys.argv[1:]
-    if "--verify" in args or "--verify-only" in args:
-        ok = verify_models()
-        sys.exit(0 if ok else 1)
 
-    log.info("Starting build-time pre-download of ML models into %s ...", MODELS_DIR)
-    try:
-        download_insightface()
-    except Exception as e:
-        log.warning("InsightFace download warning: %s", e)
-    gc.collect()
+def main() -> None:
+    s3 = _get_s3()
+    ensure_bucket(s3)
 
-    try:
-        download_yolov8()
-    except Exception as e:
-        log.warning("YOLOv8 download warning: %s", e)
-    gc.collect()
+    if "--verify" in sys.argv or "--verify-only" in sys.argv:
+        sys.exit(0 if verify_minio_models(s3) else 1)
 
-    try:
-        download_opennsfw()
-    except Exception as e:
-        log.warning("OpenNSFW download warning: %s", e)
-    gc.collect()
+    with tempfile.TemporaryDirectory(prefix="chege_model_sync_") as tmp:
+        stage = Path(tmp)
+        for fn in (
+            lambda: sync_insightface(s3, stage),
+            lambda: sync_yolov8(s3, stage),
+            lambda: sync_opennsfw(s3, stage),
+            lambda: sync_hf_repo(s3, stage, "google/siglip-base-patch16-224", "siglip/google--siglip-base-patch16-224", "4/6: SigLIP (768-d)"),
+            lambda: sync_hf_repo(s3, stage, "microsoft/Florence-2-base", "florence2/microsoft--Florence-2-base", "5/6: Microsoft Florence-2"),
+            lambda: sync_hf_repo(s3, stage, "mobiuslabsgmbh/faster-whisper-large-v3-turbo", "whisper/large-v3-turbo", "6/6: Whisper Large-v3-Turbo"),
+        ):
+            try:
+                fn()
+            except Exception as exc:
+                log.warning("Model sync step warning: %s", exc)
+            gc.collect()
 
-    try:
-        download_clip()
-    except Exception as e:
-        log.warning("CLIP download warning: %s", e)
-    gc.collect()
+    verify_minio_models(s3)
+    log.info("MinIO model registry sync finished (zero local model persistence).")
 
-    log.info("Build-time model download stage finished.")
-    verify_models()
-    sys.exit(0)
 
 if __name__ == "__main__":
     main()

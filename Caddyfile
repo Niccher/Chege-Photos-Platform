@@ -1,0 +1,94 @@
+{
+    # Global options
+    admin off
+    # Allow both HTTP (:80 for Android emulator/LAN) and HTTPS (:443 for browser) without redirect loops
+    auto_https disable_redirects
+}
+
+# ── HTTPS: chegephotos.local & localhost ─────────────────────────
+https://chegephotos.local, https://localhost, https://127.0.0.1 {
+    # Generate trusted local TLS certificate using Caddy's built-in internal CA
+    tls internal
+
+    root * /var/www/html/public
+    encode zstd gzip
+
+    # Security headers
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains; preload"
+        X-Content-Type-Options "nosniff"
+        X-Frame-Options "SAMEORIGIN"
+        Referrer-Policy "strict-origin-when-cross-origin"
+        -Server
+    }
+
+    # Block dotfiles and internal CodeIgniter directories
+    @blocked path /.* /app/* /system/* /writable/* /tests/* /vendor/*
+    respond @blocked 404
+
+    # Dozzle real-time container log monitoring
+    handle /logs* {
+        reverse_proxy dozzle:8080 {
+            flush_interval -1
+        }
+    }
+
+    # ML Microservice Swagger documentation and API
+    redir /ml /ml/
+    handle_path /ml/* {
+        reverse_proxy ml:8000
+    }
+
+    # Static assets served directly by Caddy
+    @static path *.css *.js *.ico *.svg *.woff *.woff2 *.ttf *.eot *.map
+    handle @static {
+        header Cache-Control "public, max-age=2592000, immutable"
+        file_server
+    }
+
+    # Default: CodeIgniter 4 via PHP 8.4.28 FPM (zero-buffer streaming for MinIO videos)
+    handle {
+        php_fastcgi web:9000 {
+            flush_interval -1
+            read_timeout 300s
+            write_timeout 300s
+        }
+        file_server
+    }
+}
+
+# ── HTTP Fallback (Port 80) ──────────────────────────────────────
+# Handles localhost, chegephotos.local, Android emulator (10.0.2.2), and LAN IP
+:80 {
+    root * /var/www/html/public
+    encode zstd gzip
+
+    @blocked path /.* /app/* /system/* /writable/* /tests/* /vendor/*
+    respond @blocked 404
+
+    handle /logs* {
+        reverse_proxy dozzle:8080 {
+            flush_interval -1
+        }
+    }
+
+    redir /ml /ml/
+    handle_path /ml/* {
+        reverse_proxy ml:8000
+    }
+
+    @static path *.css *.js *.ico *.svg *.woff *.woff2 *.ttf *.eot *.map
+    handle @static {
+        header Cache-Control "public, max-age=2592000, immutable"
+        file_server
+    }
+
+    handle {
+        php_fastcgi web:9000 {
+            flush_interval -1
+            read_timeout 300s
+            write_timeout 300s
+        }
+        file_server
+    }
+}

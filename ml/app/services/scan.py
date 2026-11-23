@@ -34,10 +34,28 @@ def _require_models():
 
 
 def _read_photo(photo_path: str) -> np.ndarray:
+    path_obj = Path(photo_path)
+    if not path_obj.exists() or path_obj.stat().st_size == 0:
+        raise ValueError(f"Photo file not found or empty at {photo_path}")
+
     img = cv2.imread(str(photo_path))
-    if img is None:
-        raise ValueError(f"Could not read photo at {photo_path}")
-    return img
+    if img is not None:
+        return img
+
+    # Fallback via PIL for formats not natively supported by OpenCV (e.g. HEIC, CMYK, etc.)
+    try:
+        from PIL import Image
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            pass
+
+        with Image.open(photo_path) as pil_img:
+            rgb_img = pil_img.convert("RGB")
+            return cv2.cvtColor(np.array(rgb_img), cv2.COLOR_RGB2BGR)
+    except Exception as pil_err:
+        raise ValueError(f"Could not decode image file at {photo_path}: {pil_err}")
 
 
 def process_single_photo(photo_id: int, db: Session) -> dict:
@@ -84,10 +102,8 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
     try:
         img = _read_photo(str(photo_path))
     except Exception as img_err:
-        try:
-            photo_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        log.error("Failed to decode photo %s at %s: %s", photo_id, photo_path, img_err)
+        raise ValueError(f"Could not decode image for photo {photo_id}: {img_err}")
     if ignore_faces:
         faces = []
         try:
@@ -95,8 +111,8 @@ def process_single_photo(photo_id: int, db: Session) -> dict:
                 text(f"UPDATE `{_db_schema}`.tbl_photos SET scanned_face = 1 WHERE id = :pid"),
                 {"pid": photo_id}
             )
-        except Exception:
-            pass
+        except Exception as exc:
+            log.warning("Failed to update scanned_face for photo %s: %s", photo_id, exc)
     else:
         faces = model.get(img)
 

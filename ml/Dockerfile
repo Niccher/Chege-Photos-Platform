@@ -1,8 +1,12 @@
 # syntax=docker/dockerfile:1
 FROM python:3.12-slim
 
-# ── OS deps ───────────────────────────────────────────────────────────────────
+# Default CPU PyTorch index; scripts/deploy.sh overrides to https://download.pytorch.org/whl/cu124 when GPU detected
+ARG TORCH_INDEX_URL=https://download.pytorch.org/whl/cpu
+
+# ── OS deps (includes ffmpeg for Whisper Large-v3-Turbo video audio extraction) ──
 RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg \
         libgl1 \
         libglib2.0-0 \
         libsm6 \
@@ -15,17 +19,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# ── Python dependencies ───────────────────────────────────────────────────────
+# ── Python dependencies (PyTorch CPU/CUDA controlled by TORCH_INDEX_URL) ──────
 COPY requirements.txt .
 RUN --mount=type=cache,target=/root/.cache/pip \
-    pip install --no-cache-dir -r requirements.txt
+    pip install --no-cache-dir torch --index-url "${TORCH_INDEX_URL}" \
+    && pip install --no-cache-dir -r requirements.txt
 
-# ── Pre-download all ML Models in dedicated cached layer ─────────────────────
-# (Cached independently of application code so code changes rebuild in ~2s)
-COPY scripts/download_all_models.py scripts/download_all_models.py
-RUN mkdir -p /app/models && (python scripts/download_all_models.py || true)
-
-# ── Application code ──────────────────────────────────────────────────────────
+# ── Application code (Models are stored centrally in minio://chege-models/) ───
 COPY . .
 
 ENV PORT=8000

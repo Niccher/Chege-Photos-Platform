@@ -55,7 +55,7 @@ web/public/thumbnails/*
 !web/public/uploads/.gitkeep
 !web/public/thumbnails/.gitkeep
 
-# ML & Models
+# ML & Models (Stored in minio://chege-models/, never committed to Git)
 ml/.venv/
 ml/venv/
 ml/__pycache__/
@@ -65,6 +65,19 @@ ml/wheels/
 wheels/
 *.whl
 *.onnx
+*.safetensors
+*.bin
+*.pt
+*.gguf
+
+# Writable vault, downloads, MkDocs build & backups
+web/writable/vault/*
+web/writable/downloads/*
+!web/writable/vault/.gitkeep
+!web/writable/downloads/.gitkeep
+site/
+*.sql.gz
+*.bak
 
 # OS
 .DS_Store

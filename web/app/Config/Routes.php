@@ -35,19 +35,20 @@ $routes->get('faq', 'Home::faq');
 $routes->post('api/v1/faces/scan/(:num)', '\App\Controllers\Faces::apiScan/$1', ['filter' => 'chain']);
 $routes->post('api/v1/faces/scan-all',    '\App\Controllers\Faces::apiScanAll', ['filter' => 'chain']);
 $routes->post('api/v1/faces/cluster',     '\App\Controllers\Faces::apiCluster', ['filter' => 'chain']);
-$routes->post('api/v1/faces/reset',       '\App\Controllers\Faces::apiResetScans', ['filter' => 'chain']);
-$routes->post('api/v1/faces/force-scan',  '\App\Controllers\Faces::apiForceScanAll', ['filter' => 'chain']);
+$routes->post('api/v1/faces/reset',       '\App\Controllers\Faces::apiResetScans', ['filter' => 'group:superadmin']);
+$routes->post('api/v1/faces/force-scan',  '\App\Controllers\Faces::apiForceScanAll', ['filter' => 'group:superadmin']);
 $routes->get('api/v1/faces/scan-job/(:num)', '\App\Controllers\Faces::apiScanJobStatus/$1', ['filter' => 'chain']);
 $routes->post('api/v1/faces/update-metadata', '\App\Controllers\Faces::apiUpdateFaceMetadata', ['filter' => 'chain']);
 $routes->post('api/v1/faces/search',      '\App\Controllers\Faces::apiSearch', ['filter' => 'chain']);
 
-// Versioned Admin Storage Config API routes (web session auth)
-$routes->post('api/v1/admin/storage/save',        '\App\Controllers\Admin::saveStorageSettings', ['filter' => 'chain']);
-$routes->post('api/v1/admin/storage/wipe-system', '\App\Controllers\Admin::wipeSystem', ['filter' => 'chain']);
-$routes->post('api/v1/admin/storage/reset-data',  '\App\Controllers\Admin::resetDataKeepUsers', ['filter' => 'chain']);
-$routes->post('api/v1/admin/storage/purge-media', '\App\Controllers\Admin::purgeMediaKeepTokens', ['filter' => 'chain']);
-$routes->post('admin/storage/purge-media',        '\App\Controllers\Admin::purgeMediaKeepTokens', ['filter' => 'chain']);
-$routes->post('api/v1/admin/storage/empty-trash', '\App\Controllers\Admin::emptyTrashAll', ['filter' => 'chain']);
+// Versioned Admin Storage Config API routes (restricted strictly to superadmin group)
+$routes->group('api/v1/admin', ['filter' => 'group:superadmin'], function ($routes) {
+    $routes->post('storage/save',        '\App\Controllers\Admin::saveStorageSettings');
+    $routes->post('storage/wipe-system', '\App\Controllers\Admin::wipeSystem');
+    $routes->post('storage/reset-data',  '\App\Controllers\Admin::resetDataKeepUsers');
+    $routes->post('storage/purge-media', '\App\Controllers\Admin::purgeMediaKeepTokens');
+    $routes->post('storage/empty-trash', '\App\Controllers\Admin::emptyTrashAll');
+});
 
 // API Data Endpoints (token auth for Android app)
 $routes->group('api/v1', ['namespace' => 'App\Controllers\Api'], function ($routes) {
@@ -249,6 +250,7 @@ $routes->group('admin', ['filter' => 'group:superadmin'], function ($routes) {
 
     // Storage Configs
     $routes->get('storage', 'Admin::storage');
+    $routes->post('storage/save', 'Admin::saveStorageSettings');
     $routes->post('storage/save-s3', 'Admin::saveS3Settings');
     $routes->post('storage/test-s3', 'Admin::testS3Connection');
     $routes->post('storage/save-gcp', 'Admin::saveGcpSettings');
@@ -258,6 +260,10 @@ $routes->group('admin', ['filter' => 'group:superadmin'], function ($routes) {
     $routes->post('storage/sync-pending', 'Admin::triggerMediaSyncPending');
     $routes->post('storage/hydrate-media', 'Admin::triggerMediaHydrate');
     $routes->post('storage/prune-cache', 'Admin::triggerPruneCache');
+    $routes->post('storage/wipe-system', 'Admin::wipeSystem');
+    $routes->post('storage/reset-data', 'Admin::resetDataKeepUsers');
+    $routes->post('storage/purge-media', 'Admin::purgeMediaKeepTokens');
+    $routes->post('storage/empty-trash', 'Admin::emptyTrashAll');
 
     // Audits and Devices
     $routes->get('audits', 'Admin::audits');

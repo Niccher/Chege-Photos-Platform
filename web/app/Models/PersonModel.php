@@ -35,10 +35,11 @@ class PersonModel extends Model
         $db = \Config\Database::connect();
         return $db->table('tbl_people p')
             ->select('p.*, COUNT(fe.id) AS face_count')
-            ->join('tbl_face_encodings fe', 'fe.person_id = p.id', 'left')
-            ->join('tbl_photos ph', 'ph.id = fe.photo_id', 'left')
+            ->join('tbl_face_encodings fe', 'fe.person_id = p.id', 'inner')
+            ->join('tbl_photos ph', 'ph.id = fe.photo_id', 'inner')
             ->where('ph.user_id', $userId)
             ->where('ph.is_vault', 0)
+            ->where('(p.user_id = ' . (int)$userId . ' OR p.user_id IS NULL)')
             ->groupBy('p.id')
             ->having('face_count >', 0)
             ->orderBy('p.id')

@@ -6,13 +6,17 @@ import hashlib
 import logging
 import urllib.request
 from datetime import datetime, timezone
+from contextlib import contextmanager
+import tempfile
 from pathlib import Path
-from typing import Optional
+from typing import Iterator, Optional
 from urllib.parse import urlparse
 
 from app.config import settings
 
 log = logging.getLogger("ml_chege_photos.storage")
+
+EPHEMERAL_SCRATCH_BASE = Path(tempfile.gettempdir()) / "chege_ml_media"
 
 
 def _build_sigv4_headers(
@@ -67,13 +71,28 @@ def resolve_photo_path(
     webapp_url: Optional[str] = None,
 ) -> Path:
     """
-    Resolves the physical or cached local Path for a photo.
-    If the file does not exist locally (e.g. running on separate host or container),
-    attempts to fetch it directly from MinIO / S3 object storage or WebApp streaming endpoint.
+    Resolves an ephemeral local scratch Path for a photo/video by fetching it
+    directly from MinIO / S3 primary object storage (or WebApp streaming fallback).
+    Zero permanent host media volumes are required.
     """
-    clean_rel = raw_path.strip().lstrip("/").removeprefix("uploads/").lstrip("/")
-    uploads_base = Path(settings.uploads_dir)
-    local_path = uploads_base / clean_rel
+    uploads_base = EPHEMERAL_SCRATCH_BASE.resolve()
+    uploads_base.mkdir(parents=True, exist_ok=True)
+
+    # Sanitize and normalize relative path to strictly disallow directory traversal
+    normalized = os.path.normpath(str(raw_path).strip().lstrip("/"))
+    while normalized.startswith("uploads/"):
+        normalized = normalized.removeprefix("uploads/").lstrip("/")
+
+    parts = [p for p in Path(normalized).parts if p not in ("..", ".", "")]
+    if not parts:
+        raise ValueError(f"Invalid or empty photo path: {raw_path!r}")
+
+    clean_rel = Path(*parts)
+    clean_rel_str = clean_rel.as_posix()
+    local_path = (uploads_base / clean_rel).resolve()
+
+    if not local_path.is_relative_to(uploads_base):
+        raise ValueError(f"Path traversal detected: {raw_path!r} resolves outside uploads directory")
 
     if local_path.exists() and local_path.stat().st_size > 0:
         return local_path
@@ -91,7 +110,7 @@ def resolve_photo_path(
         secret_key = settings.effective_s3_secret_key
         region = getattr(settings, "s3_region", "us-east-1")
 
-        s3_url = f"{endpoint_clean}/{bucket}/uploads/{clean_rel}"
+        s3_url = f"{endpoint_clean}/{bucket}/uploads/{clean_rel_str}"
         headers = {"User-Agent": "Mozilla/5.0 (compatible; ChegePhotosML/1.0)"}
 
         if access_key and secret_key:
@@ -99,7 +118,7 @@ def resolve_photo_path(
                 signed = _build_sigv4_headers(
                     endpoint=endpoint_clean,
                     bucket=bucket,
-                    key=f"uploads/{clean_rel}",
+                    key=f"uploads/{clean_rel_str}",
                     access_key=access_key,
                     secret_key=secret_key,
                     region=region,
@@ -120,8 +139,8 @@ def resolve_photo_path(
             active_webapp = "https://" + active_webapp
         web_headers = {"User-Agent": "Mozilla/5.0 (compatible; ChegePhotosML/1.0)"}
         if "railway" in active_webapp.lower():
-            candidates.append((f"http://chege-photos-webapp.railway.internal/uploads/{clean_rel}", web_headers))
-        candidates.append((f"{active_webapp}/uploads/{clean_rel}", web_headers))
+            candidates.append((f"http://chege-photos-webapp.railway.internal/uploads/{clean_rel_str}", web_headers))
+        candidates.append((f"{active_webapp}/uploads/{clean_rel_str}", web_headers))
 
     download_success = False
     last_err: Optional[Exception] = None
@@ -138,7 +157,7 @@ def resolve_photo_path(
                             f.write(data)
                         temp_path.replace(local_path)
                         download_success = True
-                        log.info("Downloaded %s from %s (%d bytes)", clean_rel, url, len(data))
+                        log.info("Downloaded %s from %s (%d bytes)", clean_rel_str, url, len(data))
                         break
         except Exception as e:
             last_err = e
@@ -146,9 +165,26 @@ def resolve_photo_path(
     if not download_success and not (local_path.exists() and local_path.stat().st_size > 0):
         log.warning(
             "Could not resolve photo %s across candidates %s: %s",
-            clean_rel,
+            clean_rel_str,
             [c[0] for c in candidates],
             last_err,
         )
 
     return local_path
+
+
+@contextmanager
+def ephemeral_photo_path(raw_path: str, webapp_url: Optional[str] = None) -> Iterator[Path]:
+    """
+    Context manager that fetches media from MinIO into /tmp scratch space and
+    guarantees immediate cleanup after ML inference finishes.
+    """
+    path = resolve_photo_path(raw_path, webapp_url=webapp_url)
+    try:
+        yield path
+    finally:
+        try:
+            if path.exists() and path.is_relative_to(EPHEMERAL_SCRATCH_BASE.resolve()):
+                path.unlink(missing_ok=True)
+        except Exception as exc:
+            log.debug("Failed cleaning ephemeral scratch file %s: %s", path, exc)

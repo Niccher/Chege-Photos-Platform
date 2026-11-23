@@ -1,65 +1,52 @@
-# Architecture Overview
+# System Architecture Overview
 
-System context, container topology, component responsibilities, and trust boundaries for Chege Photos WebApp.
+Chege Photos uses a **Two-Repo Architecture** paired with **100% stateless compute containers** and **MinIO as primary object storage**.
 
 ---
 
-## 1. System Context Diagram
+## C4 Container Diagram
 
 ```mermaid
-C4Context
-  title System Context - Chege Photos Ecosystem
-  Person(user, "User / Photographer", "Uploads, organizes, browses memories, and shares albums.")
-  Person(admin, "Superadmin", "Monitors telemetry, manages storage quotas, configures cron tasks.")
+flowchart TB
+    subgraph Users["End Users"]
+        Browser["Web Browser"]
+        Phone["Android Device (API 29–36)"]
+    end
 
-  System(webapp, "Chege Photos WebApp", "PHP 8.4 / CodeIgniter 4. Core web UI, admin console, authentication, and mobile sync gateway.")
-  System(ml, "ML Chege Photos", "FastAPI / Python 3.12. Neural network face detection, ArcFace embeddings, YOLO tags, CLIP vision.")
-  SystemDb(qdrant, "Qdrant Vector DB", "HNSW high-dimensional vector similarity index.")
-  SystemDb(mysql, "MySQL 8.4 Database", "Relational metadata catalog, EXIF storage, and user credentials.")
-  System_Ext(gcs, "Google Cloud Storage", "Persistent durable offsite media archive.")
-  System(android, "Chege Photos Android", "Kotlin Jetpack Compose companion mobile client.")
+    subgraph Stateless["Stateless Compute Layer (ZERO Host Media or Model Volumes)"]
+        Caddy["chege-photos-caddy\ncaddy:2-alpine (:80/:443)\n• https://chegephotos.local (tls internal)\n• flush_interval -1"]
+        Web["chege-photos-web\nphp:8.4.28-fpm-bookworm (:9000)\n• CodeIgniter 4 + Shield\n• OPcache Tracing JIT\n• Zero-disk S3 streaming"]
+        ML["chege-photos-ml\npython:3.12-slim + ffmpeg (:8000)\n• InsightFace buffalo_l\n• SigLIP 768-d + Florence-2\n• Whisper Large-v3-Turbo"]
+    end
 
-  Rel(user, webapp, "Uses via Desktop Browser", "HTTPS / Session Cookie")
-  Rel(user, android, "Uses via Mobile Phone", "Native Touch UI")
-  Rel(android, webapp, "Syncs photos and queries API", "HTTPS / 8-char Bearer Token")
-  Rel(admin, webapp, "Accesses admin console", "HTTPS / Session Cookie")
-  Rel(webapp, mysql, "Reads and writes records", "TCP 3306 / MySQL Wire")
-  Rel(webapp, redis, "Caches sessions & dispatches jobs", "TCP 6379 / Redis Protocol")
-  Rel(webapp, minio, "Stores and retrieves media objects", "HTTP 9000 / AWS SigV4")
-  Rel(webapp, ml, "Triggers AI scan / search proxy", "HTTP 8000 / REST + X-API-KEY")
-  Rel(ml, qdrant, "Upserts and queries vectors", "HTTP 6333 / gRPC 6334")
-  Rel(ml, mysql, "Persists face metadata & tags", "TCP 3306 / SQLAlchemy")
-  Rel(ml, minio, "Resolves media for inference", "HTTP 9000 / AWS SigV4")
-  Rel(webapp, gcs, "Mirrors media for offsite disaster backup", "HTTPS 443 / JSON REST")
+    subgraph PrimaryStore["Primary Object Storage"]
+        MinIO["chege-photos-minio (:9000/:9001)\n• chege-photos (media, thumbs, avatars)\n• chege-models (all AI weights)\n• chege-backups (MySQL + Qdrant dumps)"]
+    end
+
+    subgraph StatefulEngines["Stateful Engine Volumes (POSIX I/O Required)"]
+        MySQL["chege-photos-mysql (:3306)\nMySQL 8.4 InnoDB"]
+        Qdrant["chege-photos-qdrant (:6333)\nVector DB (HNSW + mmap)"]
+        Redis["chege-photos-redis (:6379)\nRedis 7 AOF (Sessions/Cache/Queue)"]
+    end
+
+    Browser -- HTTPS :443 --> Caddy
+    Phone -- REST /api/v1/ :80 --> Caddy
+    Caddy -- php_fastcgi :9000 --> Web
+    Web -- SigV4 PUT/GET/Stream --> MinIO
+    Web -- SQL --> MySQL
+    Web -- Sessions & Cache --> Redis
+    Web -- HTTP POST /api/v1/faces/encode --> ML
+    ML -- SigV4 Pull Media & Weights --> MinIO
+    ML -- BLPOP chege:ml:scan:queue --> Redis
+    ML -- Upsert/Search Vectors --> Qdrant
+    ML -- Write Faces/Tags/Captions/Transcripts --> MySQL
 ```
 
 ---
 
-## 2. Container Topology
+## Core Architectural Principles
 
-| Container / Service | Technology | Port (Internal) | Standard Production Port | Responsibility |
-|---|---|---|---|---|
-| `chege-photos-web` | PHP 8.4 / Apache | `80` | `80` | Web controllers, views, REST API, fallback hydration, cron runner |
-| `chege-photos-ml` | FastAPI / PyTorch | `8000` | `8000` | Face detection (ArcFace), CLIP semantic search, YOLOv8 tagging |
-| `chege-minio` | MinIO Object Storage | `9000` / `9001` | `9000` / `9001` | Primary S3-compatible photo/thumbnail storage + Web Console |
-| `chege-redis` | Redis 7 Alpine | `6379` | `6379` | In-memory session store with MySQL fallback, queue broker |
-| `chege-qdrant` | Qdrant Vector DB | `6333` / `6334` | `6333` / `6334` | Sub-second HNSW cosine vector similarity indexing |
-| `chege-mysql` | MySQL 8.4 | `3306` | `3306` | Relational storage for users, photos, albums, and system logs |
-| `chege-dozzle` | Dozzle Go binary | `8080` | `8888` | Real-time visual log inspection and multi-container live tail |
-
----
-
-## 3. Trust Boundaries & Security Architecture
-
-1. **Web Browser Boundary**:
-   - Authenticated via CodeIgniter Shield session cookies with `HttpOnly`, `SameSite=Lax`, and secure session handling.
-   - CSRF protection enabled across all POST/PUT/DELETE web form submissions.
-2. **Mobile REST Boundary**:
-   - Uses cryptographic 8-character device tokens passed in the `Authorization: Bearer <token>` header.
-   - Bypasses CSRF filter; validated against `tbl_auth_tokens` on every request.
-3. **ML Service Proxy Boundary**:
-   - Internal microservice communication requires the `X-API-KEY` secret header.
-   - Non-blocking cURL calls use short timeouts ($\le 100\text{ms}$) so external ML downtime never blocks the client.
-4. **Multi-Tenant Row-Level Security**:
-   - Every database query strictly binds `user_id = auth()->id()`.
-   - SQL queries with `OR` clauses use strict `groupStart()` and `groupEnd()` blocks to eliminate cross-tenant data leaks.
+1. **Strict Client Isolation:** The Android app (`Chege-Photos-App`) communicates **exclusively** with `chege-photos-caddy` on standard Port `80` / `443` (`/api/v1/...`). It has zero direct network access to ML, Redis, Qdrant, or MinIO.
+2. **NTS PHP 8.4.28 FPM + Caddy 2:** Decouples HTTP/3 + local TLS (`https://chegephotos.local`) and static asset delivery (Caddy) from PHP application execution (Non-Thread-Safe PHP-FPM workers with OPcache Tracing JIT). Activates `fastcgi_finish_request()` for instant upload responses.
+3. **Stateless Web & ML Containers:** Neither `chege-photos-web` nor `chege-photos-ml` mounts host media or model directories. Ephemeral `/tmp` scratch files are purged immediately after upload or inference.
+4. **POSIX vs. Object Storage Separation:** Transactional engines (`mysql`, `qdrant`, `redis`) and `minio` itself retain minimal local Docker volumes for POSIX I/O, while all user media, AI model weights, and cold backups live in MinIO.

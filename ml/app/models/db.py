@@ -25,11 +25,19 @@ class ScanJob(Base):
     id = Column(Integer, primary_key=True)
     status = Column(String(20), nullable=False, default="pending")
     total_photos = Column(Integer, nullable=False, default=0)
-    processed = Column(Integer, nullable=False, default=0)
+    processed = Column("processed_photos", Integer, nullable=False, default=0)
     failed = Column(Integer, nullable=False, default=0)
     created_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
     error_message = Column(Text, nullable=True)
+
+    @property
+    def processed_photos(self) -> int:
+        return self.processed
+
+    @processed_photos.setter
+    def processed_photos(self, val: int) -> None:
+        self.processed = val
 
 
 class FaceCluster(Base):

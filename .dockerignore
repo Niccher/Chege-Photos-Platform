@@ -1,0 +1,54 @@
+# Git & CI
+.git/
+.github/
+.gitignore
+.editorconfig
+
+# Environments & Secrets
+.env
+.env.*
+!.env.example
+
+# IDEs & OS
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Documentation & Build Output
+docs/
+site/
+mkdocs.yml
+*.md
+
+# Dependencies & Caches
+vendor/
+node_modules/
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+
+# Heavy Media, Model Weights & Backups (Stored in MinIO, never in Docker build context)
+web/public/uploads/*
+web/public/thumbnails/*
+web/writable/cache/*
+web/writable/logs/*
+web/writable/session/*
+web/writable/debugbar/*
+web/writable/vault/*
+web/writable/backups/*
+web/writable/downloads/*
+ml/models/
+*.onnx
+*.safetensors
+*.bin
+*.pt
+*.gguf
+*.whl
+*.zip
+*.sql.gz
+*.log

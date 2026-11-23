@@ -17,6 +17,9 @@
     <meta name="twitter:title" content="<?= $this->renderSection('title') ?> — Chege Photos">
     <meta name="twitter:description" content="<?= $this->renderSection('description') ?: 'Self-hosted photo management platform with ML-powered face recognition.' ?>">
     <meta name="twitter:image" content="<?= base_url('app_icon.png') ?>">
+    <meta name="csrf-token-name" content="<?= csrf_token() ?>">
+    <meta name="csrf-token" content="<?= csrf_hash() ?>">
+    <meta name="csrf-header" content="<?= config('Security')->headerName ?? 'X-CSRF-TOKEN' ?>">
     <!-- Bulletproof Zero-Dependency Theme Engine -->
     <script>
         window.setAppTheme = function(theme) {

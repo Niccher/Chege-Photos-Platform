@@ -1,15 +1,19 @@
 # Chege Photos Platform — Unified Multi-Container Compose
 # Usage:
+#   bash scripts/deploy.sh
 #   docker compose up --build -d
 #
 # Production Standard Ports:
-#   - web:    Port 80   (HTTP Web Dashboard & Mobile REST Gateway)
+#   - caddy:  Port 80 (HTTP) & Port 443 (HTTPS/HTTP3 — https://chegephotos.local)
+#   - web:    Internal 9000 (PHP 8.4.28 NTS FPM + OPcache JIT)
 #   - mysql:  Port 3306 (MySQL 8.4 Relational Database)
-#   - ml:     Port 8000 (FastAPI Computer Vision Microservice)
-#   - redis:  Port 6379 (Redis In-Memory Cache & Job Queue Broker)
+#   - ml:     Port 8000 (FastAPI CV + SigLIP + Florence-2 + Whisper Large-v3-Turbo)
+#   - redis:  Port 6379 (Redis 7 In-Memory Cache, Sessions & Job Queue Broker)
 #   - qdrant: Port 6333 (Qdrant Vector Database HTTP) / 6334 (gRPC)
 #   - minio:  Port 9000 (MinIO S3 API) / Port 9001 (MinIO Console)
 #   - dozzle: Port 8888 (Real-Time Container Log Viewer)
+
+name: chege-photos
 
 x-logging: &default-logging
   driver: "json-file"
@@ -20,7 +24,7 @@ x-logging: &default-logging
 services:
   mysql:
     image: mysql:8.4
-    container_name: chege-mysql
+    container_name: chege-photos-mysql
     ports:
       - "${DB_PORT:-3306}:3306"
     environment:
@@ -39,9 +43,9 @@ services:
       retries: 15
       start_period: 5s
     volumes:
-      - mysql-data:/var/lib/mysql
+      - chege-photos-mysql:/var/lib/mysql
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - mysql
           - shared-mysql
@@ -50,14 +54,14 @@ services:
 
   redis:
     image: redis:7-alpine
-    container_name: chege-redis
-    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    container_name: chege-photos-redis
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy volatile-lru
     ports:
       - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - redis-data:/data
+      - chege-photos-redis:/data
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - redis
     healthcheck:
@@ -70,14 +74,14 @@ services:
 
   qdrant:
     image: qdrant/qdrant:latest
-    container_name: chege-qdrant
+    container_name: chege-photos-qdrant
     ports:
       - "${QDRANT_HTTP_PORT:-6333}:6333"
       - "${QDRANT_GRPC_PORT:-6334}:6334"
     environment:
       QDRANT__LOG_LEVEL: INFO
     volumes:
-      - qdrant_data:/qdrant/storage
+      - chege-photos-qdrant:/qdrant/storage
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/6333'"]
       interval: 2s
@@ -85,7 +89,7 @@ services:
       retries: 10
       start_period: 3s
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - qdrant
           - ml-qdrant
@@ -94,7 +98,7 @@ services:
 
   minio:
     image: cgr.dev/chainguard/minio:latest
-    container_name: chege-minio
+    container_name: chege-photos-minio
     command: server /data --console-address ":9001"
     ports:
       - "${MINIO_PORT:-9000}:9000"
@@ -103,9 +107,9 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio_admin}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minio_password123}
     volumes:
-      - minio-data:/data
+      - chege-photos-minio:/data
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - minio
     healthcheck:
@@ -118,7 +122,7 @@ services:
 
   minio-init:
     image: cgr.dev/chainguard/minio-client:latest-dev
-    container_name: chege-minio-init
+    container_name: chege-photos-minio-init
     user: "0"
     depends_on:
       - minio
@@ -126,22 +130,22 @@ services:
       /bin/sh -c "
       until (/usr/bin/mc alias set myminio http://minio:9000 ${MINIO_ROOT_USER:-minio_admin} ${MINIO_ROOT_PASSWORD:-minio_password123}); do echo 'Waiting for MinIO...'; sleep 1; done;
       /usr/bin/mc mb --ignore-existing myminio/${S3_BUCKET:-chege-photos};
+      /usr/bin/mc mb --ignore-existing myminio/${S3_MODELS_BUCKET:-chege-models};
+      /usr/bin/mc mb --ignore-existing myminio/${S3_BACKUPS_BUCKET:-chege-backups};
       /usr/bin/mc anonymous set download myminio/${S3_BUCKET:-chege-photos}/thumbnails;
-      echo 'MinIO bucket initialized successfully';
+      echo 'MinIO buckets (photos, models, backups) initialized successfully';
       exit 0;
       "
     networks:
-      - chege-network
+      - chege-photos-net
     logging: *default-logging
 
   web:
     build:
       context: ./web
       dockerfile: Dockerfile
-    image: chege-photos-web:latest
+    image: chege-photos/web:latest
     container_name: chege-photos-web
-    ports:
-      - "${WEB_PORT:-80}:80"
     environment:
       CI_ENVIRONMENT: ${CI_ENVIRONMENT:-development}
       DB_HOST: mysql
@@ -158,15 +162,18 @@ services:
       ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
       REDIS_HOST: redis
       REDIS_PORT: 6379
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-minio}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-chege-photos}
+      S3_MODELS_BUCKET: ${S3_MODELS_BUCKET:-chege-models}
+      S3_BACKUPS_BUCKET: ${S3_BACKUPS_BUCKET:-chege-backups}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio_admin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minio_password123}
       S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-true}
+      STATELESS_MINIO_PRIMARY: "true"
     volumes:
       - ./web:/var/www/html
-      - web-vendor:/var/www/html/vendor
+      - chege-photos-web-vendor:/var/www/html/vendor
     depends_on:
       mysql:
         condition: service_healthy
@@ -175,15 +182,45 @@ services:
       minio:
         condition: service_started
     healthcheck:
-      test: ["CMD-SHELL", "php -r 'exit(@file_get_contents(\"http://localhost/api/v1/health\") !== false ? 0 : 1);'"]
-      interval: 4s
-      timeout: 3s
-      retries: 5
+      test: ["CMD-SHELL", "bash -c 'cat < /dev/null > /dev/tcp/127.0.0.1/9000'"]
+      interval: 3s
+      timeout: 2s
+      retries: 10
       start_period: 8s
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - web
+          - php-fpm
+    logging: *default-logging
+    restart: unless-stopped
+
+  caddy:
+    image: caddy:2-alpine
+    container_name: chege-photos-caddy
+    ports:
+      - "${HTTP_PORT:-${WEB_PORT:-80}}:80"
+      - "${HTTPS_PORT:-443}:443"
+      - "${HTTPS_PORT:-443}:443/udp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./web/public:/var/www/html/public:ro
+      - chege-photos-caddy-data:/data
+      - chege-photos-caddy-config:/config
+    depends_on:
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q --spider http://127.0.0.1/api/v1/health || exit 1"]
+      interval: 4s
+      timeout: 3s
+      retries: 8
+      start_period: 5s
+    networks:
+      chege-photos-net:
+        aliases:
+          - caddy
+          - chegephotos.local
           - chege-photos-webapp
     logging: *default-logging
     restart: unless-stopped
@@ -192,7 +229,9 @@ services:
     build:
       context: ./ml
       dockerfile: Dockerfile
-    image: chege-photos-ml:latest
+      args:
+        TORCH_INDEX_URL: ${TORCH_INDEX_URL:-https://download.pytorch.org/whl/cpu}
+    image: chege-photos/ml:latest
     container_name: chege-photos-ml
     ports:
       - "${ML_PORT:-8000}:8000"
@@ -217,15 +256,23 @@ services:
       PORT: 8000
       LOG_LEVEL: info
       ML_API_KEY: ${ML_API_KEY:-my_super_secret_shared_token_key_123!}
-      STORAGE_DRIVER: ${STORAGE_DRIVER:-s3}
+      STORAGE_DRIVER: ${STORAGE_DRIVER:-minio}
       S3_ENDPOINT: ${S3_ENDPOINT:-http://minio:9000}
       S3_BUCKET: ${S3_BUCKET:-chege-photos}
+      S3_MODELS_BUCKET: ${S3_MODELS_BUCKET:-chege-models}
+      S3_BACKUPS_BUCKET: ${S3_BACKUPS_BUCKET:-chege-backups}
       S3_ACCESS_KEY: ${S3_ACCESS_KEY:-minio_admin}
       S3_SECRET_KEY: ${S3_SECRET_KEY:-minio_password123}
       S3_USE_PATH_STYLE: ${S3_USE_PATH_STYLE:-true}
+      STATELESS_MINIO_PRIMARY: "true"
+      SIGLIP_MODEL_NAME: ${SIGLIP_MODEL_NAME:-google/siglip-base-patch16-224}
+      FLORENCE_MODEL_NAME: ${FLORENCE_MODEL_NAME:-microsoft/Florence-2-base}
+      WHISPER_MODEL_NAME: ${WHISPER_MODEL_NAME:-large-v3-turbo}
+      WHISPER_DEVICE: ${WHISPER_DEVICE:-cpu}
+      WHISPER_COMPUTE_TYPE: ${WHISPER_COMPUTE_TYPE:-int8}
+      ML_DEVICE: ${ML_DEVICE:-cpu}
+      ML_IDLE_UNLOAD_SEC: ${ML_IDLE_UNLOAD_SEC:-300}
     volumes:
-      - ./web/public/uploads:/app/uploads:ro
-      - insightface_models:/app/models/insightface_models
       - ./ml/app:/app/app
     depends_on:
       mysql:
@@ -243,7 +290,7 @@ services:
       retries: 5
       start_period: 5s
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - ml
           - ml-chege-photos
@@ -252,7 +299,7 @@ services:
 
   dozzle:
     image: amir20/dozzle:latest
-    container_name: chege-dozzle
+    container_name: chege-photos-dozzle
     ports:
       - "${DOZZLE_PORT:-8888}:8080"
     volumes:
@@ -263,20 +310,21 @@ services:
       DOZZLE_AUTH_PROVIDER: ${DOZZLE_AUTH_PROVIDER:-}
       DOZZLE_USERS: ${DOZZLE_USERS:-}
     networks:
-      chege-network:
+      chege-photos-net:
         aliases:
           - dozzle
     logging: *default-logging
     restart: unless-stopped
 
 volumes:
-  mysql-data:
-  qdrant_data:
-  insightface_models:
-  redis-data:
-  minio-data:
-  web-vendor:
+  chege-photos-mysql:
+  chege-photos-qdrant:
+  chege-photos-redis:
+  chege-photos-minio:
+  chege-photos-web-vendor:
+  chege-photos-caddy-data:
+  chege-photos-caddy-config:
 
 networks:
-  chege-network:
-    name: chege-network
+  chege-photos-net:
+    name: chege-photos-net

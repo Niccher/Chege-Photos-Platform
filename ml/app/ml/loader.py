@@ -6,19 +6,28 @@ import os
 import numpy as np
 
 from app.config import settings
+from app.services.model_store import MODELS_CACHE_ROOT, ensure_model_directory
 
 log = logging.getLogger("ml_chege_photos.models")
 
 _models_loaded: bool = False
 _face_analysis = None
 
-MODEL_DIR = "/app/models/insightface_models"
+MODEL_DIR = str(MODELS_CACHE_ROOT / "insightface_root")
 
 
 def load_models():
     global _models_loaded, _face_analysis
 
     os.makedirs(MODEL_DIR, exist_ok=True)
+    # Hydrate InsightFace weights from minio://chege-models/insightface/<pack>/
+    try:
+        ensure_model_directory(
+            f"insightface/{settings.face_model_pack}",
+            local_rel_dir=f"insightface_root/models/{settings.face_model_pack}",
+        )
+    except Exception as minio_err:
+        log.warning("MinIO InsightFace hydrate skipped (%s); InsightFace will download if missing.", minio_err)
 
     providers = ["CUDAExecutionProvider", "CPUExecutionProvider"]
 

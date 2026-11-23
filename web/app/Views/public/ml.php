@@ -17,46 +17,47 @@
     <p>Computer vision, natural language search, facial clustering, and text OCR — an asynchronous Python 3.12 / FastAPI microservice delivering private AI intelligence without cloud subscriptions.</p>
     <div class="mt-3 d-flex gap-2 flex-wrap justify-content-center">
         <span class="ml-tag ml-tag-fastapi">FastAPI 0.115</span>
+        <span class="ml-tag ml-tag-qdrant">Google SigLIP (768-d)</span>
+        <span class="ml-tag ml-tag-fastapi">Microsoft Florence-2</span>
+        <span class="ml-tag ml-tag-hdbscan">Whisper Large-v3-Turbo</span>
         <span class="ml-tag ml-tag-insight">InsightFace (ArcFace)</span>
-        <span class="ml-tag ml-tag-qdrant">OpenAI CLIP ViT-B/32</span>
         <span class="ml-tag ml-tag-hdbscan">YOLOv8 Nano</span>
-        <span class="ml-tag ml-tag-fastapi">Tesseract OCR</span>
-        <span class="ml-tag ml-tag-qdrant">Qdrant 1.13 HNSW</span>
+        <span class="ml-tag ml-tag-qdrant">Qdrant HNSW</span>
     </div>
 </div>
 
 <section class="section">
     <div class="section-header">
-        <h2>Four AI Superpowers in One Service</h2>
-        <p>The vision engine extracts semantic intelligence from every image in parallel, cataloging people, scenes, objects, and text in real-time.</p>
+        <h2>Multimodal AI Superpowers in One Stateless Service</h2>
+        <p>All neural weights live centrally in <code>minio://chege-models/</code> and run locally with automatic CPU/GPU detection.</p>
     </div>
     <div class="row g-4">
         <div class="col-md-3">
             <div class="card-pub text-center h-100">
                 <div class="card-icon"><i class="bi bi-search-heart"></i></div>
-                <h5>Semantic Search (CLIP)</h5>
-                <p style="font-size:0.85rem;">OpenAI CLIP transformer maps images and natural language queries into a unified 512-d embedding space, enabling conceptual search like <em>"sunset over water"</em>.</p>
+                <h5>Semantic Search (SigLIP)</h5>
+                <p style="font-size:0.85rem;"><code>google/siglip-base-patch16-224</code> maps images and natural language queries into a sharp 768-d vector space for conceptual search.</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card-pub text-center h-100">
+                <div class="card-icon"><i class="bi bi-chat-square-text"></i></div>
+                <h5>Captions &amp; OCR (Florence-2)</h5>
+                <p style="font-size:0.85rem;">Microsoft Florence-2 generates rich scene descriptions (<code>ai_caption</code>) and high-accuracy OCR text from receipts, signs, and documents.</p>
+            </div>
+        </div>
+        <div class="col-md-3">
+            <div class="card-pub text-center h-100">
+                <div class="card-icon"><i class="bi bi-mic"></i></div>
+                <h5>Video Speech (Whisper Turbo)</h5>
+                <p style="font-size:0.85rem;">Whisper Large-v3-Turbo transcribes spoken video dialogue with timestamps (CPU <code>int8</code> default / CUDA <code>float16</code> auto) for instant search.</p>
             </div>
         </div>
         <div class="col-md-3">
             <div class="card-pub text-center h-100">
                 <div class="card-icon"><i class="bi bi-person-bounding-box"></i></div>
-                <h5>Face Clustering (ArcFace)</h5>
-                <p style="font-size:0.85rem;">RetinaFace extracts 5-point aligned crops while ArcFace generates 512-d unit vectors. HDBSCAN clusters faces into named individuals automatically.</p>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-pub text-center h-100">
-                <div class="card-icon"><i class="bi bi-tag"></i></div>
-                <h5>Object Tagging (YOLOv8)</h5>
-                <p style="font-size:0.85rem;">Ultralytics YOLOv8 detects 80+ visual classes (pets, vehicles, food, buildings, sports) with bounding boxes and confidence filtering.</p>
-            </div>
-        </div>
-        <div class="col-md-3">
-            <div class="card-pub text-center h-100">
-                <div class="card-icon"><i class="bi bi-fonts"></i></div>
-                <h5>Text Recognition (OCR)</h5>
-                <p style="font-size:0.85rem;">Tesseract optical character recognition extracts textual strings from documents, signs, menus, and screenshots for full-text searchability.</p>
+                <h5>Faces &amp; Objects (ArcFace + YOLO)</h5>
+                <p style="font-size:0.85rem;">InsightFace <code>buffalo_l</code> clusters people with 512-d vectors while YOLOv8n tags 80+ COCO objects and OpenNSFW protects private media.</p>
             </div>
         </div>
     </div>
@@ -64,18 +65,18 @@
 
 <section class="section" style="border-top: 1px solid var(--border-color);">
     <div class="section-header">
-        <h2>Multimodal Architecture & Vector Flow</h2>
-        <p>How models process incoming media and populate relational and vector storage engines.</p>
+        <h2>Multimodal Architecture &amp; Vector Flow</h2>
+        <p>Stateless inference pulling media from <code>minio://chege-photos/</code> and weights from <code>minio://chege-models/</code>.</p>
     </div>
     <div class="diagram-box">
 ┌──────────────┐    ┌─────────────────────────────────────────────────────────────┐    ┌───────────────────────────┐
-│              │    │               FastAPI AI Inference Pipelines                │    │    Persistent Storage     │
+│              │    │      FastAPI Stateless AI Pipelines (chege-photos-ml)       │    │    Persistent Storage     │
 │              │    │                                                             │    │                           │
-│  Input Photo │───▶│  1. InsightFace (RetinaFace ──▶ ArcFace 512-d vector)       │───▶│  Qdrant face_embeddings   │
-│  (Uploaded)  │    │  2. OpenAI CLIP (ViT-B/32 Image Encoder ──▶ 512-d vector)   │───▶│  Qdrant photo_embeddings  │
-│              │    │  3. YOLOv8 (Object & Tag Detection Classes ──▶ BBoxes)      │───▶│  MySQL object_detections  │
-│              │    │  4. Tesseract OCR (In-Image Text Extraction ──▶ Strings)    │───▶│  MySQL photo_ocr_texts    │
-│              │    │  5. 2-Stage Safety Gate (OpenNSFW + NudeNet Verification)   │───▶│  MySQL photo flags        │
+│  MinIO S3    │───▶│  1. InsightFace (RetinaFace ──▶ ArcFace 512-d vector)       │───▶│  Qdrant face_embeddings   │
+│  (Photo /    │    │  2. Google SigLIP (ViT-B/16 ──▶ 768-d semantic vector)      │───▶│  Qdrant photo_embeddings  │
+│   Video)     │    │  3. Microsoft Florence-2 (Dense Caption + OCR)              │───▶│  MySQL ai_caption / ocr   │
+│              │    │  4. Whisper Large-v3-Turbo (ffmpeg ──▶ Video Transcript)    │───▶│  MySQL + Qdrant vectors   │
+│              │    │  5. YOLOv8n + OpenNSFW Safety Gate                          │───▶│  MySQL tags &amp; vault flags │
 └──────────────┘    └─────────────────────────────────────────────────────────────┘    └───────────────────────────┘
     </div>
 
@@ -85,23 +86,23 @@
             <table class="table table-sm table-pub">
                 <thead><tr><th>Task</th><th>Model / Architecture</th><th>Output / Dimension</th></tr></thead>
                 <tbody>
-                    <tr><td>Face Detection</td><td>RetinaFace (MobileNet0.25)</td><td>5-point landmarks + BBox</td></tr>
-                    <tr><td>Face Embedding</td><td>ArcFace ResNet-100 (buffalo_l)</td><td>512 float32 (unit vector)</td></tr>
-                    <tr><td>Semantic Search</td><td>OpenAI CLIP ViT-B/32</td><td>512 float32 (shared space)</td></tr>
+                    <tr><td>Semantic Search</td><td>Google SigLIP (<code>siglip-base-patch16-224</code>)</td><td>768 float32 (cosine)</td></tr>
+                    <tr><td>Captioning &amp; OCR</td><td>Microsoft Florence-2-base</td><td>Dense caption + OCR text</td></tr>
+                    <tr><td>Video Transcription</td><td>Whisper Large-v3-Turbo (CTranslate2)</td><td>Timestamped segments + 768-d</td></tr>
+                    <tr><td>Face Embedding</td><td>InsightFace ArcFace (<code>buffalo_l</code>)</td><td>512 float32 (unit vector)</td></tr>
                     <tr><td>Object Detection</td><td>Ultralytics YOLOv8n ONNX</td><td>80 COCO classes + conf</td></tr>
-                    <tr><td>Text Extraction</td><td>Tesseract OCR (Eng engine)</td><td>Normalized text tokens</td></tr>
-                    <tr><td>Content Safety</td><td>Hierarchical OpenNSFW + NudeNet</td><td>Confidence safety scores</td></tr>
+                    <tr><td>Content Safety</td><td>OpenNSFW ResNet-50 ONNX</td><td>Confidence safety scores</td></tr>
                 </tbody>
             </table>
         </div>
         <div class="col-md-6">
             <h5 style="font-weight:600; color: var(--text-primary);">Vector Indexing (Qdrant)</h5>
             <table class="table table-sm table-pub">
-                <thead><tr><th>Collection</th><th>Metric</th><th>Search Latency</th></tr></thead>
+                <thead><tr><th>Collection</th><th>Dimension / Metric</th><th>Search Latency</th></tr></thead>
                 <tbody>
-                    <tr><td><code>face_embeddings</code></td><td>Cosine</td><td>&lt; 15 ms (HNSW Graph)</td></tr>
-                    <tr><td><code>face_embeddings_centroids</code></td><td>Cosine</td><td>&lt; 5 ms (Person Centroids)</td></tr>
-                    <tr><td><code>photo_embeddings</code></td><td>Cosine</td><td>&lt; 20 ms (CLIP Multi-Modal)</td></tr>
+                    <tr><td><code>photo_embeddings</code></td><td>768-d Cosine</td><td>&lt; 20 ms (SigLIP + Transcripts)</td></tr>
+                    <tr><td><code>face_embeddings</code></td><td>512-d Cosine</td><td>&lt; 15 ms (HNSW Graph)</td></tr>
+                    <tr><td><code>face_embeddings_centroids</code></td><td>512-d Cosine</td><td>&lt; 5 ms (Person Centroids)</td></tr>
                     <tr><td>Storage Engine</td><td>mmap on disk</td><td>Hardware-accelerated</td></tr>
                 </tbody>
             </table>

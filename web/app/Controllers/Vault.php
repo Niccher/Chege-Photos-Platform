@@ -312,6 +312,8 @@ class Vault extends BaseController
         }
 
         $photoModel = new PhotoModel();
+        $photos = $photoModel->where('user_id', $userId)->whereIn('id', $photoIds)->findAll();
+
         $updated = $photoModel->where('user_id', $userId)
                               ->whereIn('id', $photoIds)
                               ->set([
@@ -319,6 +321,21 @@ class Vault extends BaseController
                                   'vault_locked_at' => date('Y-m-d H:i:s'),
                               ])
                               ->update();
+
+        // Physically isolate files outside public web root
+        foreach ($photos as $photo) {
+            foreach (['path', 'thumbnail_path'] as $field) {
+                if (!empty($photo[$field])) {
+                    $rel = ltrim($photo[$field], '/');
+                    $src = FCPATH . $rel;
+                    if (is_file($src)) {
+                        $dest = WRITEPATH . 'vault/' . $rel;
+                        @mkdir(dirname($dest), 0750, true);
+                        @rename($src, $dest);
+                    }
+                }
+            }
+        }
 
         // Privacy Shield: revoke any existing shares and album associations
         $db = \Config\Database::connect();
@@ -356,6 +373,8 @@ class Vault extends BaseController
         }
 
         $photoModel = new PhotoModel();
+        $photos = $photoModel->where('user_id', $userId)->whereIn('id', $photoIds)->findAll();
+
         $photoModel->where('user_id', $userId)
                    ->whereIn('id', $photoIds)
                    ->set([
@@ -364,6 +383,21 @@ class Vault extends BaseController
                        'vault_locked_at' => null,
                    ])
                    ->update();
+
+        // Restore physical files back into public uploads
+        foreach ($photos as $photo) {
+            foreach (['path', 'thumbnail_path'] as $field) {
+                if (!empty($photo[$field])) {
+                    $rel = ltrim($photo[$field], '/');
+                    $vaultSrc = WRITEPATH . 'vault/' . $rel;
+                    if (is_file($vaultSrc)) {
+                        $pubDest = FCPATH . $rel;
+                        @mkdir(dirname($pubDest), 0755, true);
+                        @rename($vaultSrc, $pubDest);
+                    }
+                }
+            }
+        }
 
         return $this->response->setJSON([
             'status'  => 'success',
@@ -395,12 +429,13 @@ class Vault extends BaseController
         $photos = $photoModel->where('user_id', $userId)->whereIn('id', $photoIds)->findAll();
 
         foreach ($photos as $p) {
-            // Remove physical files
-            if (! empty($p['path']) && file_exists(FCPATH . $p['path'])) {
-                @unlink(FCPATH . $p['path']);
-            }
-            if (! empty($p['thumbnail_path']) && file_exists(FCPATH . $p['thumbnail_path'])) {
-                @unlink(FCPATH . $p['thumbnail_path']);
+            // Remove physical files from public and isolated vault storage
+            foreach (['path', 'thumbnail_path'] as $field) {
+                if (!empty($p[$field])) {
+                    $rel = ltrim($p[$field], '/');
+                    @unlink(FCPATH . $rel);
+                    @unlink(WRITEPATH . 'vault/' . $rel);
+                }
             }
             $photoModel->delete($p['id'], true); // Hard permanent delete
         }
@@ -433,14 +468,36 @@ class Vault extends BaseController
         $relPath = ($type === 'thumb' && ! empty($photo['thumbnail_path']))
             ? $photo['thumbnail_path']
             : $photo['path'];
+        $cleanRel = ltrim($relPath, '/');
 
-        $fullPath = FCPATH . ltrim($relPath, '/');
-        if (! file_exists($fullPath)) {
-            // Fallback to original path if thumbnail missing
-            $fullPath = FCPATH . ltrim($photo['path'], '/');
+        // Stream directly from MinIO primary object storage behind Vault PIN/session check
+        try {
+            $storage = new \App\Services\Storage\StorageManager();
+            if ($storage->isConfigured()) {
+                $rangeHeader = $this->request->getHeaderLine('Range') ?: null;
+                if ($storage->streamObject($cleanRel, $rangeHeader)) {
+                    return;
+                }
+                if ($type === 'thumb' && !empty($photo['path']) && $storage->streamObject(ltrim($photo['path'], '/'), $rangeHeader)) {
+                    return;
+                }
+            }
+        } catch (\Throwable $e) {
+            log_message('warning', 'Vault MinIO stream fallback for ' . $cleanRel . ': ' . $e->getMessage());
         }
 
-        if (! file_exists($fullPath)) {
+        $vaultPath = WRITEPATH . 'vault/' . $cleanRel;
+        $pubPath   = FCPATH . $cleanRel;
+        $fullPath  = is_file($vaultPath) ? $vaultPath : (is_file($pubPath) ? $pubPath : null);
+
+        if (! $fullPath) {
+            // Fallback to original path if thumbnail missing
+            $vaultOrig = WRITEPATH . 'vault/' . ltrim($photo['path'], '/');
+            $pubOrig   = FCPATH . ltrim($photo['path'], '/');
+            $fullPath  = is_file($vaultOrig) ? $vaultOrig : (is_file($pubOrig) ? $pubOrig : null);
+        }
+
+        if (! $fullPath || ! file_exists($fullPath)) {
             return $this->response->setStatusCode(404)->setBody('File not found on storage.');
         }
 

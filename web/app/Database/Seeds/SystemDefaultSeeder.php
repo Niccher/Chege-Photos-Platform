@@ -15,8 +15,17 @@ class SystemDefaultSeeder extends Seeder
         if (setting('ML.faceDetThresh') === null) {
             setting()->set('ML.faceDetThresh', 0.5);
         }
-        if (setting('ML.clipModelName') === null) {
-            setting()->set('ML.clipModelName', 'openai/clip-vit-base-patch32');
+        if (setting('ML.clipModelName') === null || setting('ML.clipModelName') === 'openai/clip-vit-base-patch32') {
+            setting()->set('ML.clipModelName', 'google/siglip-base-patch16-224');
+        }
+        if (setting('ML.siglipModelName') === null) {
+            setting()->set('ML.siglipModelName', 'google/siglip-base-patch16-224');
+        }
+        if (setting('ML.florenceModelName') === null) {
+            setting()->set('ML.florenceModelName', 'microsoft/Florence-2-base');
+        }
+        if (setting('ML.whisperModelName') === null) {
+            setting()->set('ML.whisperModelName', 'large-v3-turbo');
         }
         if (setting('ML.objectDetThresh') === null) {
             setting()->set('ML.objectDetThresh', 0.5);

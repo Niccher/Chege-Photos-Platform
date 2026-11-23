@@ -78,10 +78,16 @@ class Settings(BaseSettings):
     storage_driver: str = "minio"
     s3_endpoint: str | None = None
     s3_bucket: str = "chege-photos"
+    s3_models_bucket: str = "chege-models"
     s3_access_key: str | None = None
     s3_secret_key: str | None = None
     s3_region: str = "us-east-1"
     s3_use_path_style: bool = True
+
+    @property
+    def effective_s3_models_bucket(self) -> str:
+        import os
+        return os.getenv("S3_MODELS_BUCKET") or self.s3_models_bucket or "chege-models"
 
     @property
     def effective_s3_endpoint(self) -> str | None:
@@ -108,14 +114,36 @@ class Settings(BaseSettings):
         return self.s3_secret_key or os.getenv("S3_SECRET_KEY") or os.getenv("MINIO_ROOT_PASSWORD")
 
     def set_dynamic_webapp_url(self, url: str | None) -> None:
-        """Dynamically record the WebApp URL passed via request headers or body."""
+        """Dynamically record the WebApp URL passed via request headers or body, validating host safety."""
         global _ACTIVE_DYNAMIC_WEBAPP_URL
         if not url:
             return
         clean = str(url).strip().rstrip("/")
         if clean and not clean.startswith(("http://", "https://")):
             clean = "https://" + clean
-        if clean:
+
+        from urllib.parse import urlparse
+        import os
+        parsed = urlparse(clean)
+        hostname = (parsed.hostname or "").lower()
+
+        # Reject private IP ranges, metadata services, and untrusted domains
+        if not hostname or hostname.startswith("169.254.") or hostname in ("metadata.google.internal", "metadata"):
+            return
+
+        # Allowed host patterns
+        allowed = (
+            hostname in ("web", "localhost", "127.0.0.1", "chege-photos-webapp", "host.docker.internal")
+            or hostname.endswith(".railway.internal")
+            or hostname.endswith(".up.railway.app")
+        )
+        configured = self.webapp_url or os.getenv("WEBAPP_URL")
+        if configured:
+            conf_host = (urlparse(configured).hostname or "").lower()
+            if conf_host and hostname == conf_host:
+                allowed = True
+
+        if allowed:
             _ACTIVE_DYNAMIC_WEBAPP_URL = clean
 
     @property
@@ -218,9 +246,27 @@ class Settings(BaseSettings):
     face_model_pack: str = "buffalo_l"
     face_det_thresh: float = 0.5
 
-    # ── CLIP / Semantic Search ──────────────────────────────────
-    clip_model_name: str = "openai/clip-vit-base-patch32"
+    # ── Semantic Search (SigLIP 768-d — Clean Cutover, No Legacy CLIP) ──
+    siglip_model_name: str = "google/siglip-base-patch16-224"
+    siglip_vector_size: int = 768
     qdrant_photo_collection: str = "photo_embeddings"
+
+    # ── Florence-2 (Dense Captioning & OCR) ─────────────────────
+    florence_model_name: str = "microsoft/Florence-2-base"
+
+    # ── Whisper Large-v3-Turbo (Video Audio Transcription) ──────
+    whisper_model_name: str = "large-v3-turbo"
+    whisper_device: str = "cpu"
+    whisper_compute_type: str = "int8"
+
+    # ── Hardware & Memory Lifecycle ─────────────────────────────
+    ml_device: str = "cpu"
+    ml_idle_unload_sec: int = 300
+
+    @property
+    def clip_model_name(self) -> str:
+        """Alias returning the active SigLIP model name for config endpoints."""
+        return self.siglip_model_name
 
     # ── Object Detection ────────────────────────────────────────
     object_det_threshold: float = 0.5

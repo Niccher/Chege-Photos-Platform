@@ -3,9 +3,10 @@ from __future__ import annotations
 import logging
 from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from qdrant_client import QdrantClient
+from sqlalchemy.orm import Session
 
 from app.config import settings
-from app.database import get_qdrant
+from app.database import get_db, get_qdrant
 from app.ml import semantic_search
 
 log = logging.getLogger("ml_chege_photos.api_search")
@@ -190,14 +191,12 @@ def ocr_search_endpoint(
     query: str = Query(..., min_length=1, description="Text snippet to search within photos"),
     limit: int = Query(20, ge=1, le=100),
     user_id: int | None = Query(None),
+    db: Session = Depends(get_db),
 ):
     """Search photos containing specific OCR-recognized text."""
     try:
-        from app.database import get_db
         from sqlalchemy import text
-        from app.config import settings
 
-        db = next(get_db())
         _db_schema = settings.effective_db_name
 
         sql = f"""

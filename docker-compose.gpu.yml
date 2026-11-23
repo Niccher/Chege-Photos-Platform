@@ -1,0 +1,15 @@
+# GPU Override for Chege Photos Platform
+# Automatically enabled by scripts/deploy.sh when an NVIDIA GPU + Container Toolkit is detected.
+services:
+  ml:
+    environment:
+      ML_DEVICE: cuda
+      WHISPER_DEVICE: cuda
+      WHISPER_COMPUTE_TYPE: float16
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]

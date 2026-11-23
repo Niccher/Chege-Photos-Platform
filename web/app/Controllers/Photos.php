@@ -545,21 +545,31 @@ class Photos extends BaseController
         $yearMonth = date('Y/m');
         $newName = $file->getRandomName();
 
-        // Target directories in user and date hierarchy
+        // Stateless MinIO-primary staging: use ephemeral /tmp scratch space, never persist to FCPATH/uploads
         $subDir = "users/{$userId}/{$yearMonth}";
-        $targetUploadDir = FCPATH . "uploads/{$subDir}";
-        if (!is_dir($targetUploadDir)) {
-            if (!@mkdir($targetUploadDir, 0777, true) && !is_dir($targetUploadDir)) {
-                @chmod(FCPATH . 'uploads', 0777);
-                @mkdir($targetUploadDir, 0777, true);
-            }
-        }
+        $storage = new \App\Services\Storage\StorageManager();
+        $useStatelessMinio = $storage->isConfigured();
 
-        $targetThumbDir = FCPATH . "thumbnails/{$subDir}";
-        if (!is_dir($targetThumbDir)) {
-            if (!@mkdir($targetThumbDir, 0777, true) && !is_dir($targetThumbDir)) {
-                @chmod(FCPATH . 'thumbnails', 0777);
-                @mkdir($targetThumbDir, 0777, true);
+        if ($useStatelessMinio) {
+            $scratchDir = rtrim(sys_get_temp_dir(), '/') . '/chege_upload_' . bin2hex(random_bytes(8));
+            @mkdir($scratchDir, 0777, true);
+            $targetUploadDir = $scratchDir;
+            $targetThumbDir  = $scratchDir;
+        } else {
+            $targetUploadDir = FCPATH . "uploads/{$subDir}";
+            if (!is_dir($targetUploadDir)) {
+                if (!@mkdir($targetUploadDir, 0777, true) && !is_dir($targetUploadDir)) {
+                    @chmod(FCPATH . 'uploads', 0777);
+                    @mkdir($targetUploadDir, 0777, true);
+                }
+            }
+
+            $targetThumbDir = FCPATH . "thumbnails/{$subDir}";
+            if (!is_dir($targetThumbDir)) {
+                if (!@mkdir($targetThumbDir, 0777, true) && !is_dir($targetThumbDir)) {
+                    @chmod(FCPATH . 'thumbnails', 0777);
+                    @mkdir($targetThumbDir, 0777, true);
+                }
             }
         }
 
@@ -571,7 +581,7 @@ class Photos extends BaseController
         $isHeic = in_array($ext, ['heic', 'heif']) || strpos($mimeType, 'heic') !== false || strpos($mimeType, 'heif') !== false;
 
         $thumbName = ($isVideo || $isHeic) ? (pathinfo($newName, PATHINFO_FILENAME) . '.jpg') : $newName;
-        $thumbnailPath = "{$targetThumbDir}/{$thumbName}";
+        $thumbnailPath = ($useStatelessMinio ? "{$targetThumbDir}/thumb_{$thumbName}" : "{$targetThumbDir}/{$thumbName}");
 
         $imageInfo = null;
         if ($isVideo) {
@@ -596,6 +606,33 @@ class Photos extends BaseController
 
         $metadata = $isVideo ? null : $this->getMergedMetadata($fullPath);
 
+        $cloudUploadKey = "uploads/{$subDir}/{$newName}";
+        $cloudThumbKey  = "thumbnails/{$subDir}/{$thumbName}";
+        $resolvedMime   = $isVideo ? $mimeType : ($imageInfo['mime'] ?? $mimeType);
+
+        if ($useStatelessMinio) {
+            $uploadRes = $storage->uploadFile($fullPath, $cloudUploadKey, $resolvedMime);
+            if (empty($uploadRes['success'])) {
+                @unlink($fullPath);
+                @unlink($thumbnailPath);
+                @rmdir($scratchDir);
+                return $this->response->setJSON([
+                    'status'  => 'error',
+                    'message' => 'Primary MinIO upload failed: ' . ($uploadRes['error'] ?? 'Unknown storage error'),
+                ])->setStatusCode(502);
+            }
+
+            if (file_exists($thumbnailPath)) {
+                $thumbMime = str_ends_with(strtolower($thumbName), '.webp') ? 'image/webp' : 'image/jpeg';
+                $storage->uploadFile($thumbnailPath, $cloudThumbKey, $thumbMime);
+            }
+
+            // Immediately purge ephemeral /tmp scratch files so Web container remains 100% stateless
+            @unlink($fullPath);
+            @unlink($thumbnailPath);
+            @rmdir($scratchDir);
+        }
+
         $deviceUuid = $this->request->getPost('device_uuid') ?: ($this->request->getHeaderLine('X-Device-UUID') ?: null);
         $uploadSource = !empty($deviceUuid) ? 'android' : 'webapp';
 
@@ -605,17 +642,17 @@ class Photos extends BaseController
             'device_uuid'    => $deviceUuid,
             'upload_source'  => $uploadSource,
             'filename'       => $newName,
-            'path'           => "uploads/{$subDir}/{$newName}",
-            'mime_type'      => $isVideo ? $mimeType : ($imageInfo['mime'] ?? $mimeType),
+            'path'           => $cloudUploadKey,
+            'mime_type'      => $resolvedMime,
             'width'          => $imageInfo ? $imageInfo[0] : null,
             'height'         => $imageInfo ? $imageInfo[1] : null,
             'size'           => $size,
-            'storage_driver' => 'hybrid',
+            'storage_driver' => $useStatelessMinio ? 'minio' : 'local',
             'gcp_synced'     => 0,
             'gcp_synced_at'  => null,
             'file_hash'      => $fileHash,
             'taken_at'       => $metadata['taken_at'] ?? date('Y-m-d H:i:s'),
-            'thumbnail_path' => "thumbnails/{$subDir}/{$thumbName}",
+            'thumbnail_path' => $cloudThumbKey,
             'latitude'       => $metadata['lat'] ?? null,
             'longitude'      => $metadata['lng'] ?? null,
             'exif_data'      => $metadata['exif'] ?? null,
@@ -627,9 +664,12 @@ class Photos extends BaseController
 
         if ($isLargeMedia) {
             $this->dispatchBackgroundMediaProcessing((int) $photoId);
+            if ($photoId) {
+                $this->triggerFaceScanAsync((int) $photoId, $isVideo);
+            }
             return $this->response->setJSON([
                 'status'  => 'success',
-                'message' => 'Uploaded successfully (large media queued for background processing).',
+                'message' => 'Uploaded successfully to MinIO (large media queued for background processing).',
                 'id'      => (int) $photoId,
             ]);
         }
@@ -638,16 +678,20 @@ class Photos extends BaseController
             $this->response->setJSON(['status' => 'success', 'message' => 'Uploaded successfully.', 'id' => (int) $photoId])->send();
             fastcgi_finish_request();
             ignore_user_abort(true);
-            $this->mirrorToGcp($data['path'], $data['thumbnail_path'], $data['mime_type'], (int) $photoId);
-            if (!$isVideo && $photoId) {
-                $this->triggerFaceScan((int) $photoId);
+            if (!$useStatelessMinio) {
+                $this->mirrorToGcp($data['path'], $data['thumbnail_path'], $data['mime_type'], (int) $photoId);
+            }
+            if ($photoId) {
+                $this->triggerFaceScan((int) $photoId, $isVideo);
             }
             return;
         }
 
-        $this->mirrorToGcp($data['path'], $data['thumbnail_path'], $data['mime_type'], (int) $photoId);
-        if (!$isVideo && $photoId) {
-            $this->triggerFaceScanAsync((int) $photoId);
+        if (!$useStatelessMinio) {
+            $this->mirrorToGcp($data['path'], $data['thumbnail_path'], $data['mime_type'], (int) $photoId);
+        }
+        if ($photoId) {
+            $this->triggerFaceScanAsync((int) $photoId, $isVideo);
         }
 
         return $this->response->setJSON(['status' => 'success', 'message' => 'Uploaded successfully.', 'id' => (int) $photoId]);
@@ -1652,7 +1696,13 @@ class Photos extends BaseController
         $photo = $photoModel->where('user_id', auth()->id())->find($id);
         if (!$photo) return $this->response->setJSON(['status' => 'error', 'message' => 'Photo not found']);
 
-        $newVal = !$photo['is_favorite'];
+        $explicit = $this->request->getPost('is_favorite');
+        if ($explicit !== null && $explicit !== '') {
+            $newVal = filter_var($explicit, FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+        } else {
+            $newVal = $photo['is_favorite'] ? 0 : 1;
+        }
+
         $photoModel->update($id, ['is_favorite' => $newVal]);
         $this->clearSidebarCountsCache();
 
@@ -1666,7 +1716,13 @@ class Photos extends BaseController
         $photo      = $photoModel->where('user_id', $userId)->find($id);
         if (!$photo) return $this->response->setJSON(['status' => 'error', 'message' => 'Photo not found']);
         
-        $newStatus = !$photo['is_archived'];
+        $explicit = $this->request->getPost('is_archived');
+        if ($explicit !== null && $explicit !== '') {
+            $newStatus = filter_var($explicit, FILTER_VALIDATE_BOOLEAN) ? 1 : 0;
+        } else {
+            $newStatus = $photo['is_archived'] ? 0 : 1;
+        }
+
         $photoModel->update($id, ['is_archived' => $newStatus]);
         $this->clearSidebarCountsCache();
         return $this->response->setJSON(['status' => 'success', 'is_archived' => $newStatus]);
@@ -1869,14 +1925,28 @@ class Photos extends BaseController
                 }
 
                 $added = 0;
+                $tempFiles = [];
+                $storage = new \App\Services\Storage\StorageManager();
+                $useMinio = $storage->isConfigured();
                 foreach ($photos as $photo) {
-                    $full = FCPATH . ltrim($photo['path'], '/');
+                    $relPath = ltrim($photo['path'], '/');
+                    $full = FCPATH . $relPath;
                     if (is_file($full)) {
                         $zip->addFile($full, $photo['filename'] ?? basename($full));
                         $added++;
+                    } elseif ($useMinio) {
+                        $tmpObj = rtrim(sys_get_temp_dir(), '/') . '/chege_zip_' . bin2hex(random_bytes(6)) . '_' . basename($relPath);
+                        if ($storage->downloadFile($relPath, $tmpObj) && is_file($tmpObj)) {
+                            $zip->addFile($tmpObj, $photo['filename'] ?? basename($relPath));
+                            $tempFiles[] = $tmpObj;
+                            $added++;
+                        }
                     }
                 }
                 $zip->close();
+                foreach ($tempFiles as $tf) {
+                    @unlink($tf);
+                }
 
                 if ($added === 0) {
                     @unlink($zipPath);
@@ -2004,7 +2074,9 @@ class Photos extends BaseController
 
             $result['exif'] = !empty($richExif) ? json_encode($richExif) : null;
 
-        } catch (\Exception $e) { }
+        } catch (\Throwable $e) {
+            log_message('warning', 'EXIF extraction error: ' . $e->getMessage());
+        }
 
         return $result;
     }
@@ -2076,7 +2148,8 @@ class Photos extends BaseController
                         ->withFile($tmpJpg)
                         ->resize(400, 400, true, 'height')
                         ->save($target);
-                } catch (\Exception $e) {
+                } catch (\Throwable $e) {
+                    log_message('warning', 'HEIC converted thumbnail resize failed, falling back to copy: ' . $e->getMessage());
                     @copy($tmpJpg, $target);
                 }
                 @unlink($tmpJpg);
@@ -2089,7 +2162,8 @@ class Photos extends BaseController
                 ->withFile($source)
                 ->resize(400, 400, true, 'height')
                 ->save($target);
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
+            log_message('warning', 'Direct thumbnail resize failed, falling back to copy: ' . $e->getMessage());
             @copy($source, $target); 
         }
     }
@@ -2117,32 +2191,57 @@ class Photos extends BaseController
             ]);
         }
 
-        $fullPath = FCPATH . $photo['path'];
-        $thumbnailPath = FCPATH . $photo['thumbnail_path'];
+        $storage = new \App\Services\Storage\StorageManager();
+        $useMinio = $storage->isConfigured();
 
-        // Overwrite original
-        if (file_exists($fullPath)) @unlink($fullPath);
-        $file->move(dirname($fullPath), basename($fullPath));
+        if ($useMinio) {
+            $scratch = rtrim(sys_get_temp_dir(), '/') . '/chege_edit_' . bin2hex(random_bytes(8));
+            @mkdir($scratch, 0777, true);
+            $fullPath = $scratch . '/' . basename($photo['path']);
+            $thumbnailPath = $scratch . '/thumb_' . basename($photo['thumbnail_path']);
+            $file->move($scratch, basename($photo['path']));
+        } else {
+            $fullPath = FCPATH . $photo['path'];
+            $thumbnailPath = FCPATH . $photo['thumbnail_path'];
+            if (file_exists($fullPath)) @unlink($fullPath);
+            $file->move(dirname($fullPath), basename($fullPath));
+        }
 
         // Regenerate thumbnail
         $this->generateThumbnail($fullPath, $thumbnailPath);
 
         // Update DB
         $imageInfo = @getimagesize($fullPath);
+        $newSize = filesize($fullPath);
+        $newHash = hash_file('sha256', $fullPath);
+
+        if ($useMinio) {
+            $storage->uploadFile($fullPath, ltrim($photo['path'], '/'), $imageInfo['mime'] ?? $photo['mime_type']);
+            if (file_exists($thumbnailPath) && !empty($photo['thumbnail_path'])) {
+                $storage->uploadFile($thumbnailPath, ltrim($photo['thumbnail_path'], '/'), 'image/jpeg');
+            }
+            @unlink($fullPath);
+            @unlink($thumbnailPath);
+            @rmdir($scratch);
+        }
+
         $photoModel->update($id, [
-            'width'     => $imageInfo[0] ?? $photo['width'],
-            'height'    => $imageInfo[1] ?? $photo['height'],
-            'size'      => filesize($fullPath),
-            'file_hash' => hash_file('sha256', $fullPath),
-            'updated_at'=> date('Y-m-d H:i:s')
+            'width'          => $imageInfo[0] ?? $photo['width'],
+            'height'         => $imageInfo[1] ?? $photo['height'],
+            'size'           => $newSize,
+            'file_hash'      => $newHash,
+            'storage_driver' => $useMinio ? 'minio' : ($photo['storage_driver'] ?? 'local'),
+            'updated_at'     => date('Y-m-d H:i:s'),
         ]);
 
-        $this->mirrorToGcp($photo['path'], $photo['thumbnail_path'], null, (int) $id);
+        if (!$useMinio) {
+            $this->mirrorToGcp($photo['path'], $photo['thumbnail_path'], null, (int) $id);
+        }
 
         return $this->response->setJSON(['status' => 'success', 'message' => 'Changes saved successfully']);
     }
 
-    private function triggerFaceScan(int $photoId): void
+    private function triggerFaceScan(int $photoId, bool $isVideo = false): void
     {
         try {
             $mlUrl     = $this->getMlUrl();
@@ -2157,20 +2256,22 @@ class Photos extends BaseController
                     'X-Webapp-Url' => $webappUrl,
                 ],
                 'form_params' => [
-                    'photo_id'   => $photoId,
-                    'async_task' => 1,
-                    'scan_faces' => 1,
-                    'scan_tags'  => 1,
-                    'scan_clip'  => 1,
-                    'webapp_url' => $webappUrl,
+                    'photo_id'     => $photoId,
+                    'async_task'   => 1,
+                    'scan_faces'   => $isVideo ? 0 : 1,
+                    'scan_tags'    => $isVideo ? 0 : 1,
+                    'scan_clip'    => $isVideo ? 0 : 1,
+                    'scan_caption' => $isVideo ? 0 : 1,
+                    'scan_audio'   => $isVideo ? 1 : 0,
+                    'webapp_url'   => $webappUrl,
                 ],
             ]);
-        } catch (\Exception $e) {
-            log_message('error', "Auto face scan failed for photo {$photoId}: " . $e->getMessage());
+        } catch (\Throwable $e) {
+            log_message('error', "Auto ML scan failed for media {$photoId}: " . $e->getMessage());
         }
     }
 
-    private function triggerFaceScanAsync(int $photoId): void
+    private function triggerFaceScanAsync(int $photoId, bool $isVideo = false): void
     {
         $mlUrl     = $this->getMlUrl();
         $webappUrl = rtrim(base_url(), '/');
@@ -2183,12 +2284,14 @@ class Photos extends BaseController
                 'X-Webapp-Url: ' . $webappUrl,
             ],
             CURLOPT_POSTFIELDS => http_build_query([
-                'photo_id'   => $photoId,
-                'async_task' => 1,
-                'scan_faces' => 1,
-                'scan_tags'  => 1,
-                'scan_clip'  => 1,
-                'webapp_url' => $webappUrl,
+                'photo_id'     => $photoId,
+                'async_task'   => 1,
+                'scan_faces'   => $isVideo ? 0 : 1,
+                'scan_tags'    => $isVideo ? 0 : 1,
+                'scan_clip'    => $isVideo ? 0 : 1,
+                'scan_caption' => $isVideo ? 0 : 1,
+                'scan_audio'   => $isVideo ? 1 : 0,
+                'webapp_url'   => $webappUrl,
             ]),
             CURLOPT_RETURNTRANSFER => true,
             CURLOPT_TIMEOUT_MS => 100,
@@ -2362,13 +2465,15 @@ class Photos extends BaseController
                     $photoIds = array_values(array_unique($photoIds));
                 }
             }
-        } catch (\Exception $e) {
+        } catch (\Throwable $e) {
             log_message('error', 'CLIP semantic search call failed: ' . $e->getMessage());
         }
 
         $query->groupStart()
               ->like('filename', $q)
               ->orLike('ocr_text', $q)
+              ->orLike('ai_caption', $q)
+              ->orLike('audio_transcript', $q)
               ->orLike('exif_data', $q)
               ->orLike('taken_at', $q);
         if (!empty($photoIds)) {
@@ -2501,7 +2606,9 @@ class Photos extends BaseController
                     $photoModel->update($photoId, [
                         'storage_driver' => $driver,
                     ]);
-                } catch (\Throwable $e) {}
+                } catch (\Throwable $e) {
+                    log_message('warning', 'Failed to update photo storage_driver: ' . $e->getMessage());
+                }
             }
 
             return $uploaded;

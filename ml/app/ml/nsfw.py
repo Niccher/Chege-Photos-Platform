@@ -14,10 +14,11 @@ import numpy as np
 from PIL import Image
 
 from app.config import settings
+from app.services.model_store import MODELS_CACHE_ROOT, ensure_model_file
 
 log = logging.getLogger("ml_chege_photos.nsfw")
 
-OPENNSFW_ONNX_PATH = Path("/app/models/open_nsfw.onnx")
+OPENNSFW_ONNX_PATH = MODELS_CACHE_ROOT / "nsfw" / "open_nsfw.onnx"
 OPENNSFW_DOWNLOAD_URLS = [
     "https://github.com/facefusion/facefusion-assets/releases/download/models-3.0.0/open_nsfw.onnx",
     "https://huggingface.co/ninjawick/webui-faceswap-unlocked/resolve/main/open_nsfw.onnx",
@@ -40,9 +41,14 @@ class BaseNSFWDetector(ABC):
 
 
 def ensure_opennsfw_onnx_present() -> Path:
-    """Ensures /app/models/open_nsfw.onnx exists on disk for OpenCV DNN and manifest inventory."""
+    """Ensures open_nsfw.onnx is cached in /tmp/chege_models from minio://chege-models/nsfw/open_nsfw.onnx."""
     if OPENNSFW_ONNX_PATH.exists() and OPENNSFW_ONNX_PATH.stat().st_size > 1000000:
         return OPENNSFW_ONNX_PATH
+
+    try:
+        return ensure_model_file("nsfw/open_nsfw.onnx", "nsfw/open_nsfw.onnx")
+    except Exception as minio_err:
+        log.warning("MinIO OpenNSFW fetch unavailable (%s); falling back to package/direct download.", minio_err)
 
     try:
         OPENNSFW_ONNX_PATH.parent.mkdir(parents=True, exist_ok=True)

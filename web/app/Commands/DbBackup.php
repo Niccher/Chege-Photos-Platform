@@ -107,20 +107,25 @@ class DbBackup extends BaseCommand
         $password = $db->password;
         $database = $db->database;
 
-        // Try native mysqldump CLI first if binary exists
+        // Try native mysqldump CLI first if binary exists (using secure defaults-extra-file)
         $mysqldump = shell_exec('which mysqldump 2>/dev/null');
         if (!empty($mysqldump)) {
+            $tmpCnf = tempnam(sys_get_temp_dir(), 'mycnf_');
+            $cnfContent = "[client]\nuser=" . addcslashes($username, "\\\n\"'") . "\npassword=" . addcslashes($password, "\\\n\"'") . "\n";
+            file_put_contents($tmpCnf, $cnfContent);
+            chmod($tmpCnf, 0600);
+
             $cmd = sprintf(
-                'mysqldump --host=%s --port=%d --user=%s --password=%s --single-transaction --quick %s | gzip > %s',
+                'mysqldump --defaults-extra-file=%s --host=%s --port=%d --single-transaction --quick %s | gzip > %s',
+                escapeshellarg($tmpCnf),
                 escapeshellarg($hostname),
                 $port,
-                escapeshellarg($username),
-                escapeshellarg($password),
                 escapeshellarg($database),
                 escapeshellarg($outputPath)
             );
             $returnVar = 0;
             system($cmd, $returnVar);
+            @unlink($tmpCnf);
             if ($returnVar === 0 && file_exists($outputPath) && filesize($outputPath) > 0) {
                 return;
             }

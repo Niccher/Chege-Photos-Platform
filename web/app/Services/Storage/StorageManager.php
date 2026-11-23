@@ -249,6 +249,141 @@ class StorageManager
     }
 
     /**
+     * Streams an object directly from MinIO / S3 to the HTTP client with zero local disk storage.
+     * Supports HTTP Range (206 Partial Content) and conditional ETag (304) passthrough.
+     */
+    public function streamObject(string $cloudPath, ?string $rangeHeader = null, ?string $ifNoneMatch = null): bool
+    {
+        $target = $this->resolveRequestTarget($cloudPath);
+        $payloadHash = hash('sha256', '');
+
+        // Probe metadata via HEAD first to validate existence, size, content-type, and ETag
+        $headHeaders = $this->signV4('HEAD', $target['uri'], $target['host'], $payloadHash);
+        $hch = curl_init($target['url']);
+        $meta = [];
+        curl_setopt_array($hch, [
+            CURLOPT_NOBODY         => true,
+            CURLOPT_RETURNTRANSFER => true,
+            CURLOPT_HTTPHEADER     => $headHeaders,
+            CURLOPT_TIMEOUT        => 8,
+            CURLOPT_CONNECTTIMEOUT => 4,
+            CURLOPT_HEADERFUNCTION => function ($ch, $headerLine) use (&$meta) {
+                $len = strlen($headerLine);
+                $parts = explode(':', $headerLine, 2);
+                if (count($parts) === 2) {
+                    $meta[strtolower(trim($parts[0]))] = trim($parts[1]);
+                }
+                return $len;
+            },
+        ]);
+        curl_exec($hch);
+        $headCode = curl_getinfo($hch, CURLINFO_HTTP_CODE);
+        curl_close($hch);
+
+        if ($headCode !== 200) {
+            return false;
+        }
+
+        $etag = $meta['etag'] ?? null;
+        if ($ifNoneMatch && $etag && trim($ifNoneMatch) === trim($etag)) {
+            while (ob_get_level() > 0) {
+                @ob_end_clean();
+            }
+            http_response_code(304);
+            header('ETag: ' . $etag);
+            header('Cache-Control: public, max-age=31536000, immutable');
+            exit;
+        }
+
+        // Flush/discard any CodeIgniter output buffers so large video streams never buffer in PHP RAM
+        while (ob_get_level() > 0) {
+            @ob_end_clean();
+        }
+
+        $extraHeaders = [];
+        if (!empty($rangeHeader)) {
+            $extraHeaders['range'] = $rangeHeader;
+        }
+
+        $getHeaders = $this->signV4('GET', $target['uri'], $target['host'], $payloadHash, $extraHeaders);
+        $ch = curl_init($target['url']);
+        $headersSent = false;
+
+        curl_setopt_array($ch, [
+            CURLOPT_HTTPHEADER     => $getHeaders,
+            CURLOPT_TIMEOUT        => 300,
+            CURLOPT_CONNECTTIMEOUT => 10,
+            CURLOPT_HEADERFUNCTION => function ($ch, $headerLine) use (&$headersSent) {
+                $len = strlen($headerLine);
+                $trimmed = trim($headerLine);
+                if (stripos($trimmed, 'HTTP/') === 0) {
+                    if (preg_match('/HTTP\/\d(?:\.\d)?\s+(\d{3})/', $trimmed, $m)) {
+                        http_response_code((int) $m[1]);
+                    }
+                    return $len;
+                }
+                if ($trimmed === '') {
+                    if (!$headersSent) {
+                        header('Cache-Control: public, max-age=31536000, immutable');
+                        header('Accept-Ranges: bytes');
+                        $headersSent = true;
+                    }
+                    return $len;
+                }
+                $parts = explode(':', $trimmed, 2);
+                if (count($parts) === 2) {
+                    $key = strtolower(trim($parts[0]));
+                    $val = trim($parts[1]);
+                    if (in_array($key, ['content-type', 'content-length', 'content-range', 'etag', 'last-modified'], true)) {
+                        header("{$parts[0]}: {$val}");
+                    }
+                }
+                return $len;
+            },
+            CURLOPT_WRITEFUNCTION => function ($ch, $chunk) {
+                echo $chunk;
+                if (ob_get_level() > 0) {
+                    @ob_flush();
+                }
+                flush();
+                return strlen($chunk);
+            },
+        ]);
+
+        curl_exec($ch);
+        $code = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($code === 200 || $code === 206) {
+            exit;
+        }
+
+        return false;
+    }
+
+    /**
+     * Downloads an object from MinIO to an ephemeral /tmp file, executes $callback($tmpPath),
+     * and guarantees immediate deletion of the temporary file.
+     *
+     * @template T
+     * @param callable(string): T $callback
+     * @return T|null
+     */
+    public function withTempObject(string $cloudPath, callable $callback)
+    {
+        $ext = pathinfo($cloudPath, PATHINFO_EXTENSION);
+        $tmpPath = rtrim(sys_get_temp_dir(), '/') . '/chege_obj_' . bin2hex(random_bytes(8)) . ($ext ? ".{$ext}" : '');
+        try {
+            if (!$this->downloadFile($cloudPath, $tmpPath) || !file_exists($tmpPath) || filesize($tmpPath) === 0) {
+                return null;
+            }
+            return $callback($tmpPath);
+        } finally {
+            @unlink($tmpPath);
+        }
+    }
+
+    /**
      * Checks if an object exists in the bucket via S3 HEAD request.
      */
     public function objectExists(string $cloudPath): bool

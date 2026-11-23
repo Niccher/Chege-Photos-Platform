@@ -59,8 +59,8 @@ count=0
 while ! php -r '$h=getenv("database.default.hostname")?:(getenv("database_default_hostname")?:(getenv("DB_HOST")?:(getenv("MYSQLHOST")?:"mysql"))); $pt=getenv("database.default.port")?:(getenv("database_default_port")?:(getenv("DB_PORT")?:(getenv("MYSQLPORT")?:"3306"))); $u=getenv("database.default.username")?:(getenv("database_default_username")?:(getenv("DB_USER")?:(getenv("MYSQLUSER")?:"root"))); $p=getenv("database.default.password")?:(getenv("database_default_password")?:(getenv("DB_PASS")?:(getenv("MYSQLPASSWORD")?:"root_password"))); new PDO("mysql:host={$h};port={$pt}", $u, $p);' 2>/dev/null; do
     count=$((count + 1))
     if [ $count -ge $max_retries ]; then
-        echo "ERROR: MySQL did not become ready in time. Starting Apache without migrations."
-        exec apache2-foreground
+        echo "ERROR: MySQL did not become ready in time. Starting PHP-FPM without migrations."
+        exec php-fpm -F
     fi
     echo "MySQL connection warming up... ($count/$max_retries)"
     sleep 1
@@ -111,9 +111,9 @@ chown -R www-data:www-data /var/www/html/writable 2>/dev/null || true
 
 # Setup container cron jobs
 echo "Configuring container cron schedules..."
-printenv | sed 's/^\(.*\)=\(.*\)$/export \1="\2"/' > /var/www/html/writable/cron_env.sh 2>/dev/null || true
+printenv | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | sed 's/^\([^=]*\)=\(.*\)$/export \1="\2"/' > /var/www/html/writable/cron_env.sh 2>/dev/null || true
 chmod 0644 /var/www/html/writable/cron_env.sh 2>/dev/null || true
-printenv | grep -E '^(MYSQL|DB_|CI_|PORT|APACHE|ML_|QDRANT_|RAILWAY|REDIS_|APP_|encryption\.|app\.)' > /etc/environment || true
+printenv | grep -E '^[A-Za-z_][A-Za-z0-9_]*=' | grep -E '^(MYSQL|DB_|CI_|PORT|ML_|QDRANT_|RAILWAY|REDIS_|APP_|S3_|STORAGE_|MINIO_|STATELESS_)' > /etc/environment || true
 
 cat << 'EOF' > /etc/cron.d/photos-cron
 # Run master task scheduler every minute with environment loaded
@@ -132,18 +132,11 @@ service cron start || cron || echo "WARNING: Could not start cron daemon."
 # Stream background cron execution to container stdout so scheduled failures appear live in Docker logs
 (tail -n 0 -F /var/log/cron-run.log > /proc/1/fd/1 2>/dev/null) &
 
-# Force remove conflicting MPMs and ensure mpm_prefork is active
-echo "Configuring Apache MPM..."
-a2dismod mpm_event mpm_worker 2>/dev/null || true
-a2enmod mpm_prefork 2>/dev/null || true
-rm -f /etc/apache2/mods-enabled/mpm_event.load \
-      /etc/apache2/mods-enabled/mpm_event.conf \
-      /etc/apache2/mods-enabled/mpm_worker.load \
-      /etc/apache2/mods-enabled/mpm_worker.conf 2>/dev/null || true
+# In stateless MinIO-primary mode, skip local thumbnail hydration (all media streams directly from MinIO)
+if [ "${STATELESS_MINIO_PRIMARY:-true}" != "true" ]; then
+    echo "Triggering background thumbnail pre-warming from GCP..."
+    (sleep 4 && php /var/www/html/spark cloud:sync --hydrate --thumbnails-only >> /var/log/hydrate.log 2>&1) &
+fi
 
-# Pre-warm lightweight thumbnails from GCP in background (non-blocking for instant Apache boot)
-echo "Triggering background thumbnail pre-warming from GCP..."
-(sleep 4 && php /var/www/html/spark cloud:sync --hydrate --thumbnails-only >> /var/log/hydrate.log 2>&1) &
-
-echo "Migrations complete. Starting Apache..."
-exec apache2-foreground
+echo "Migrations complete. Starting PHP 8.4.28 FPM..."
+exec php-fpm -F

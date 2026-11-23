@@ -33,6 +33,7 @@ def extract_text_from_image(image_input: str | Path | np.ndarray) -> str:
             return ""
 
         if img is None or img.size == 0:
+            log.warning("Image decoding returned empty array or None: %s", image_input if isinstance(image_input, (str, Path)) else "ndarray")
             return ""
 
         h, w = img.shape[:2]
