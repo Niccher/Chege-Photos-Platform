@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # Patched PHP 8.4.28 NTS FPM (fixes CVE-2026-126714 phpAfterShell, CVE-2026-129289, CVE-2026-115560)
-FROM php:8.4.28-fpm-bookworm
+FROM php:8.6.0-fpm-bookworm
 
 # ── Fast PHP extension installer (downloads optimized pre-compiled binaries) ──
 COPY --from=mlocati/php-extension-installer /usr/bin/install-php-extensions /usr/local/bin/
